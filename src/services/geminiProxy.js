@@ -1,4 +1,5 @@
-﻿const baseUrl = (import.meta.env.VITE_GEMINI_PROXY_URL || '').trim();
+const defaultBaseUrl = typeof window !== 'undefined' ? '/api' : '';
+const baseUrl = (import.meta.env.VITE_GEMINI_PROXY_URL || defaultBaseUrl).trim();
 const apiKey = (import.meta.env.VITE_GEMINI_PROXY_API_KEY || '').trim();
 
 export async function sendGeminiChat({ message, history = [], attachments = [] }) {

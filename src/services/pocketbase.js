@@ -2,12 +2,24 @@ import PocketBase from 'pocketbase';
 
 const STORAGE_KEY = 'pb_endpoint';
 const runtimeHost = typeof window !== 'undefined' ? window.location.hostname : '';
-const hostCandidate = runtimeHost ? `http://${runtimeHost}:8090` : '';
+
+function isLocalHost(value = '') {
+  const normalized = `${value || ''}`.trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1') {
+    return true;
+  }
+  if (normalized.startsWith('192.168.') || normalized.startsWith('10.')) {
+    return true;
+  }
+  return /^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized);
+}
+
+const hostCandidate = isLocalHost(runtimeHost) ? `http://${runtimeHost}:8090` : '';
 const DEFAULT_CANDIDATES = [
   import.meta.env.VITE_PB_ENDPOINT,
   hostCandidate,
-  'http://127.0.0.1:8090',
-  'http://localhost:8090',
+  ...(isLocalHost(runtimeHost) ? ['http://127.0.0.1:8090', 'http://localhost:8090'] : []),
 ];
 
 let pocketBase = null;
@@ -43,7 +55,10 @@ async function isHealthy(baseUrl) {
 }
 
 async function pickEndpoint() {
-  const saved = normalize(localStorage.getItem(STORAGE_KEY) || '', '');
+  const saved =
+    typeof window !== 'undefined'
+      ? normalize(localStorage.getItem(STORAGE_KEY) || '', '')
+      : '';
   const candidates = [...DEFAULT_CANDIDATES, saved]
     .filter(Boolean)
     .map((value) => normalize(value, ''))
@@ -64,7 +79,7 @@ async function pickEndpoint() {
     selected = saved || normalize(DEFAULT_CANDIDATES[0] || '', '');
   }
 
-  if (selected) {
+  if (selected && typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, selected);
   }
 
@@ -74,16 +89,29 @@ async function pickEndpoint() {
 export async function initPocketBase() {
   pocketBaseUrl = await pickEndpoint();
   if (!pocketBaseUrl) {
+    pocketBase = null;
     return null;
   }
   pocketBase = new PocketBase(pocketBaseUrl);
   return pocketBase;
 }
 
+export function hasPocketBaseEndpoint() {
+  const configured = normalize(DEFAULT_CANDIDATES[0] || '', '');
+  const saved =
+    typeof window !== 'undefined'
+      ? normalize(localStorage.getItem(STORAGE_KEY) || '', '')
+      : '';
+  return Boolean(pocketBaseUrl || configured || saved);
+}
+
 export function getPocketBase() {
   if (!pocketBase) {
     const fallback = normalize(DEFAULT_CANDIDATES[0] || '', '');
-    pocketBase = new PocketBase(fallback || 'http://127.0.0.1:8090');
+    if (!fallback) {
+      return null;
+    }
+    pocketBase = new PocketBase(fallback);
     pocketBaseUrl = pocketBase.baseUrl;
   }
   return pocketBase;
@@ -92,4 +120,3 @@ export function getPocketBase() {
 export function getPocketBaseUrl() {
   return pocketBaseUrl;
 }
-

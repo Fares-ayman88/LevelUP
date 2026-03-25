@@ -1,7 +1,7 @@
 import { collection, getDocs } from 'firebase/firestore';
 
 import { auth, db } from './firebase.js';
-import { getPocketBase } from './pocketbase.js';
+import { getPocketBase, hasPocketBaseEndpoint } from './pocketbase.js';
 import { seedCourses } from '../data/seedCourses.js';
 import { seedMentors } from '../data/seedMentors.js';
 import { seedCategories } from '../data/seedCategories.js';
@@ -506,7 +506,10 @@ export function buildCategories(courses) {
 }
 
 export async function fetchCourses() {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    return applySavedMarks(orderFeaturedCourses(seedCourses.slice()));
+  }
   try {
     const records = await pb.collection(COURSE_COLLECTION).getFullList({ sort: '-created' });
     const mapped = records.map((record) => mapCourse(pb, record));
@@ -519,7 +522,12 @@ export async function fetchCourses() {
 }
 
 export async function fetchMentors() {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    const firestoreMentors = await fetchFirestoreMentors();
+    const merged = mergeFirestoreMentors(seedMentors.slice(), firestoreMentors);
+    return orderFeaturedMentors(dedupeMentorsByName(merged));
+  }
   try {
     const [records, firestoreMentors, overlays] = await Promise.all([
       pb.collection(MENTOR_COLLECTION).getFullList({ sort: '-created' }),
@@ -553,8 +561,13 @@ export async function subscribeCourses(onChange, onError) {
     courseInvalidationSubscribers,
     onChange
   );
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
   let unsubscribeRealtime = () => {};
+  if (!pb) {
+    return () => {
+      unsubscribeInvalidation();
+    };
+  }
   try {
     const unsubscribe = await pb.collection(COURSE_COLLECTION).subscribe('*', () => {
       onChange?.();
@@ -581,8 +594,13 @@ export async function subscribeMentors(onChange, onError) {
     mentorInvalidationSubscribers,
     onChange
   );
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
   let unsubscribeRealtime = () => {};
+  if (!pb) {
+    return () => {
+      unsubscribeInvalidation();
+    };
+  }
   try {
     const unsubscribe = await pb.collection(MENTOR_COLLECTION).subscribe('*', () => {
       onChange?.();
@@ -608,7 +626,10 @@ export async function createCourse(
   course,
   { coverImageFile, lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   const payload = sanitizeCoursePayload(course);
   if (coverImageFile) payload.coverImage = coverImageFile;
   let created = await pb.collection(COURSE_COLLECTION).create(payload);
@@ -635,7 +656,10 @@ export async function updateCourse(
   course,
   { coverImageFile, previousCoverUrl = '', lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   const payload = sanitizeCoursePayload(course);
   if (coverImageFile) payload.coverImage = coverImageFile;
   if (!coverImageFile && !payload.coverImageUrl && `${previousCoverUrl || ''}`.trim()) {
@@ -661,13 +685,19 @@ export async function updateCourse(
 }
 
 export async function deleteCourse(courseId) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   await pb.collection(COURSE_COLLECTION).delete(courseId);
   invalidateCoursesQuery();
 }
 
 export async function createMentor(mentor, { imageFile } = {}) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   const payload = sanitizeMentorPayload(mentor);
   if (imageFile) payload.image = imageFile;
   const created = await pb.collection(MENTOR_COLLECTION).create(payload);
@@ -677,7 +707,10 @@ export async function createMentor(mentor, { imageFile } = {}) {
 }
 
 export async function updateMentor(mentorId, mentor, { imageFile } = {}) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   const payload = sanitizeMentorPayload(mentor);
   if (imageFile) payload.image = imageFile;
   const updated = await pb.collection(MENTOR_COLLECTION).update(mentorId, payload);
@@ -687,13 +720,19 @@ export async function updateMentor(mentorId, mentor, { imageFile } = {}) {
 }
 
 export async function deleteMentor(mentorId) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   await pb.collection(MENTOR_COLLECTION).delete(mentorId);
   invalidateMentorsQuery();
 }
 
 export async function saveCourseFeaturedOrder(orderedCourses = []) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   const tasks = orderedCourses.map((course, index) =>
     pb.collection(COURSE_COLLECTION).update(course.id, { featuredRank: index + 1 })
   );
@@ -702,7 +741,10 @@ export async function saveCourseFeaturedOrder(orderedCourses = []) {
 }
 
 export async function saveMentorFeaturedOrder(orderedMentors = []) {
-  const pb = getPocketBase();
+  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+  if (!pb) {
+    throw new Error('PocketBase is not configured for production writes.');
+  }
   const tasks = orderedMentors.map((mentor, index) =>
     pb.collection(MENTOR_COLLECTION).update(mentor.id, { featuredRank: index + 1 })
   );

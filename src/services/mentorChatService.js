@@ -1,10 +1,26 @@
-import { getPocketBase } from './pocketbase.js';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+
+import { db } from './firebase.js';
 
 const CHATS_COLLECTION = 'mentor_chats';
-const MESSAGES_COLLECTION = 'mentor_chat_messages';
-const READ_TIMEOUT_MS = 20000;
-const WRITE_TIMEOUT_MS = 20000;
-const POLL_INTERVAL_MS = 2000;
+const MESSAGES_COLLECTION = 'messages';
+
+function requireDb() {
+  if (!db) {
+    throw new Error('Firestore is not configured.');
+  }
+  return db;
+}
 
 function toInt(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
@@ -28,6 +44,13 @@ function toBool(value, fallback = false) {
 function toNullableDate(value) {
   if (!value) return null;
   if (value instanceof Date) return value;
+  if (typeof value?.toDate === 'function') {
+    try {
+      return value.toDate();
+    } catch {
+      return null;
+    }
+  }
   if (typeof value === 'string') {
     const parsed = new Date(value.trim());
     if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -56,9 +79,25 @@ function previewText(text = '') {
   return `${trimmed.substring(0, 60)}...`;
 }
 
-function mapSummary(record) {
-  const data = record || {};
-  const conversationId = `${data.conversationKey || ''}`.trim() || `${data.id || ''}`.trim();
+function sortByLatest(items = []) {
+  const copy = items.slice();
+  copy.sort((left, right) => {
+    const a = left.lastMessageAt ? left.lastMessageAt.getTime() : 0;
+    const b = right.lastMessageAt ? right.lastMessageAt.getTime() : 0;
+    return b - a;
+  });
+  return copy;
+}
+
+function sortByCreated(items = []) {
+  const copy = items.slice();
+  copy.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  return copy;
+}
+
+function mapSummary(snapshot) {
+  const data = snapshot.data() || {};
+  const conversationId = `${data.conversationKey || snapshot.id || ''}`.trim();
   return {
     conversationId,
     userId: `${data.userId || ''}`.trim(),
@@ -67,7 +106,7 @@ function mapSummary(record) {
     mentorRole: `${data.mentorRole || ''}`.trim(),
     mentorImagePath: `${data.mentorImagePath || data.mentorImageUrl || ''}`.trim(),
     lastMessage: `${data.lastMessage || ''}`.trim(),
-    lastMessageAt: toNullableDate(data.lastMessageAt || data.updated || data.created),
+    lastMessageAt: toNullableDate(data.lastMessageAt || data.updatedAt || data.createdAt),
     lastMessageFromUser: toBool(data.lastMessageFromUser),
     lastSeenByMentor: toBool(data.lastSeenByMentor, true),
     activeForMentor: toBool(data.activeForMentor),
@@ -76,112 +115,30 @@ function mapSummary(record) {
   };
 }
 
-function mapMessage(record) {
-  const data = record || {};
+function mapMessage(snapshot) {
+  const data = snapshot.data() || {};
   return {
-    id: `${data.id || ''}`.trim(),
+    id: snapshot.id,
     senderRole: `${data.senderRole || 'mentor'}`.trim(),
     text: `${data.text || ''}`,
-    createdAt: toDate(data.createdAt || data.created),
+    createdAt: toDate(data.createdAt),
     seenByMentor: toBool(data.seenByMentor, true),
   };
 }
 
-async function withTimeout(promise, timeoutMs = READ_TIMEOUT_MS) {
-  let timerId = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timerId = setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timerId) clearTimeout(timerId);
-  }
+function conversationRef(conversationId) {
+  return doc(requireDb(), CHATS_COLLECTION, `${conversationId || ''}`.trim());
 }
 
-async function findConversationByKey(conversationKey) {
-  const pb = getPocketBase();
-  const key = `${conversationKey || ''}`.trim();
-  if (!key) return null;
-  const filter = pb.filter('conversationKey = {:conversationKey}', { conversationKey: key });
-  const result = await withTimeout(
-    pb.collection(CHATS_COLLECTION).getList(1, 1, { filter, sort: '-updated' }),
-    READ_TIMEOUT_MS
-  );
-  if (!result?.items?.length) return null;
-  return result.items[0];
+function messagesRef(conversationId) {
+  return collection(requireDb(), CHATS_COLLECTION, `${conversationId || ''}`.trim(), MESSAGES_COLLECTION);
 }
 
-async function fetchUserChats(userId) {
-  const pb = getPocketBase();
-  const uid = `${userId || ''}`.trim();
-  if (!uid) return [];
-  const filter = pb.filter('userId = {:userId}', { userId: uid });
-  const records = await withTimeout(
-    pb.collection(CHATS_COLLECTION).getFullList({
-      filter,
-      sort: '-lastMessageAt,-updated',
-    }),
-    READ_TIMEOUT_MS
-  );
-  const items = records.map(mapSummary);
-  items.sort((left, right) => {
-    const a = left.lastMessageAt ? left.lastMessageAt.getTime() : 0;
-    const b = right.lastMessageAt ? right.lastMessageAt.getTime() : 0;
-    return b - a;
-  });
-  return items;
-}
-
-async function fetchMessages(conversationId) {
-  const pb = getPocketBase();
+async function getConversationSnapshot(conversationId) {
   const key = `${conversationId || ''}`.trim();
-  if (!key) return [];
-  const filter = pb.filter('conversationKey = {:conversationKey}', { conversationKey: key });
-  const records = await withTimeout(
-    pb.collection(MESSAGES_COLLECTION).getFullList({
-      filter,
-      sort: 'createdAt,created',
-    }),
-    READ_TIMEOUT_MS
-  );
-  return records.map(mapMessage);
-}
-
-async function fetchConversationSummary(conversationId) {
-  const record = await findConversationByKey(conversationId);
-  return record ? mapSummary(record) : null;
-}
-
-function subscribeWithPolling(loader, onData, onError) {
-  let disposed = false;
-  let lastSerialized = '';
-
-  const run = async () => {
-    try {
-      const result = await loader();
-      if (disposed) return;
-      const serialized = JSON.stringify(result);
-      if (serialized === lastSerialized) return;
-      lastSerialized = serialized;
-      onData(result);
-    } catch (error) {
-      if (disposed) return;
-      if (onError) onError(error);
-    }
-  };
-
-  void run();
-  const intervalId = setInterval(() => {
-    void run();
-  }, POLL_INTERVAL_MS);
-
-  return () => {
-    disposed = true;
-    clearInterval(intervalId);
-  };
+  if (!key) return null;
+  const snapshot = await getDoc(conversationRef(key));
+  return snapshot.exists() ? snapshot : null;
 }
 
 export function buildConversationId({ userId, mentorId }) {
@@ -189,15 +146,60 @@ export function buildConversationId({ userId, mentorId }) {
 }
 
 export function subscribeUserChats(userId, onData, onError) {
-  return subscribeWithPolling(() => fetchUserChats(userId), onData, onError);
+  const uid = `${userId || ''}`.trim();
+  if (!uid || !db) {
+    onData?.([]);
+    return () => {};
+  }
+
+  const q = query(collection(db, CHATS_COLLECTION), where('userId', '==', uid));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items = snapshot.docs.map((docItem) => mapSummary(docItem));
+      onData?.(sortByLatest(items));
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeMessages(conversationId, onData, onError) {
-  return subscribeWithPolling(() => fetchMessages(conversationId), onData, onError);
+  const key = `${conversationId || ''}`.trim();
+  if (!key || !db) {
+    onData?.([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    messagesRef(key),
+    (snapshot) => {
+      const items = snapshot.docs.map((docItem) => mapMessage(docItem));
+      onData?.(sortByCreated(items));
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeConversationSummary(conversationId, onData, onError) {
-  return subscribeWithPolling(() => fetchConversationSummary(conversationId), onData, onError);
+  const key = `${conversationId || ''}`.trim();
+  if (!key || !db) {
+    onData?.(null);
+    return () => {};
+  }
+
+  return onSnapshot(
+    conversationRef(key),
+    (snapshot) => {
+      onData?.(snapshot.exists() ? mapSummary(snapshot) : null);
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export async function ensureConversation({
@@ -208,44 +210,40 @@ export async function ensureConversation({
   mentorRole,
   mentorImagePath = '',
 }) {
-  const pb = getPocketBase();
-  const conversationKey = `${conversationId || ''}`.trim();
+  const key = `${conversationId || ''}`.trim();
   const uid = `${userId || ''}`.trim();
   const mid = `${mentorId || ''}`.trim();
-  if (!conversationKey || !uid || !mid) return;
+  if (!key || !uid || !mid) return;
 
   const now = new Date().toISOString();
+  const snapshot = await getConversationSnapshot(key);
+
   const payload = {
-    conversationKey,
+    conversationKey: key,
     userId: uid,
     mentorId: mid,
     mentorName: `${mentorName || ''}`.trim() || 'Mentor',
     mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
+    mentorImagePath: `${mentorImagePath || ''}`.trim(),
     updatedAt: now,
   };
-  if (`${mentorImagePath || ''}`.trim()) {
-    payload.mentorImagePath = `${mentorImagePath}`.trim();
-  }
 
-  const existing = await findConversationByKey(conversationKey);
-  if (!existing) {
-    await withTimeout(
-      pb.collection(CHATS_COLLECTION).create({
-        ...payload,
-        lastMessage: '',
-        lastMessageAt: now,
-        lastMessageFromUser: false,
-        lastSeenByMentor: true,
-        activeForMentor: false,
-        unreadForUser: 0,
-        lastUserMessageId: '',
-      }),
-      WRITE_TIMEOUT_MS
-    );
+  if (!snapshot) {
+    await setDoc(conversationRef(key), {
+      ...payload,
+      lastMessage: '',
+      lastMessageAt: now,
+      lastMessageFromUser: false,
+      lastSeenByMentor: true,
+      activeForMentor: false,
+      unreadForUser: 0,
+      lastUserMessageId: '',
+      createdAt: now,
+    });
     return;
   }
 
-  await withTimeout(pb.collection(CHATS_COLLECTION).update(existing.id, payload), WRITE_TIMEOUT_MS);
+  await setDoc(conversationRef(key), payload, { merge: true });
 }
 
 export async function sendUserText({
@@ -257,15 +255,14 @@ export async function sendUserText({
   mentorImagePath = '',
   text,
 }) {
-  const pb = getPocketBase();
-  const conversationKey = `${conversationId || ''}`.trim();
+  const key = `${conversationId || ''}`.trim();
   const uid = `${userId || ''}`.trim();
   const mid = `${mentorId || ''}`.trim();
   const trimmed = `${text || ''}`.trim();
-  if (!conversationKey || !uid || !mid || !trimmed) return;
+  if (!key || !uid || !mid || !trimmed) return;
 
   await ensureConversation({
-    conversationId: conversationKey,
+    conversationId: key,
     userId: uid,
     mentorId: mid,
     mentorName,
@@ -273,96 +270,90 @@ export async function sendUserText({
     mentorImagePath,
   });
 
-  const conversation = await findConversationByKey(conversationKey);
-  if (!conversation) return;
-
   const now = new Date().toISOString();
-  const messageRecord = await withTimeout(
-    pb.collection(MESSAGES_COLLECTION).create({
-      chatId: conversation.id,
-      conversationKey,
-      senderRole: 'user',
-      senderId: uid,
-      text: trimmed,
-      seenByMentor: false,
-      createdAt: now,
-    }),
-    WRITE_TIMEOUT_MS
+  const messageRecord = await addDoc(messagesRef(key), {
+    chatId: key,
+    conversationKey: key,
+    senderRole: 'user',
+    senderId: uid,
+    text: trimmed,
+    seenByMentor: false,
+    createdAt: now,
+  });
+
+  await setDoc(
+    conversationRef(key),
+    {
+      conversationKey: key,
+      userId: uid,
+      mentorId: mid,
+      mentorName: `${mentorName || ''}`.trim() || 'Mentor',
+      mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
+      mentorImagePath: `${mentorImagePath || ''}`.trim(),
+      lastMessage: previewText(trimmed),
+      lastMessageAt: now,
+      lastMessageFromUser: true,
+      lastSeenByMentor: false,
+      activeForMentor: true,
+      unreadForUser: 0,
+      lastUserMessageId: messageRecord.id,
+      updatedAt: now,
+    },
+    { merge: true }
   );
-
-  const payload = {
-    conversationKey,
-    userId: uid,
-    mentorId: mid,
-    mentorName: `${mentorName || ''}`.trim() || 'Mentor',
-    mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
-    lastMessage: previewText(trimmed),
-    lastMessageAt: now,
-    lastMessageFromUser: true,
-    lastSeenByMentor: false,
-    lastUserMessageId: `${messageRecord.id || ''}`.trim(),
-    unreadForUser: 0,
-    updatedAt: now,
-  };
-  if (`${mentorImagePath || ''}`.trim()) {
-    payload.mentorImagePath = `${mentorImagePath}`.trim();
-  }
-
-  await withTimeout(pb.collection(CHATS_COLLECTION).update(conversation.id, payload), WRITE_TIMEOUT_MS);
 }
 
 export async function markMentorSeen(conversationId) {
-  const pb = getPocketBase();
-  const conversationKey = `${conversationId || ''}`.trim();
-  if (!conversationKey) return;
-  const conversation = await findConversationByKey(conversationKey);
-  if (!conversation) return;
+  const key = `${conversationId || ''}`.trim();
+  if (!key) return;
+  const snapshot = await getConversationSnapshot(key);
+  if (!snapshot) return;
 
-  const lastUserMessageId = `${conversation.lastUserMessageId || ''}`.trim();
+  const data = snapshot.data() || {};
+  const lastUserMessageId = `${data.lastUserMessageId || ''}`.trim();
   if (lastUserMessageId) {
-    await withTimeout(
-      pb.collection(MESSAGES_COLLECTION).update(lastUserMessageId, { seenByMentor: true }),
-      WRITE_TIMEOUT_MS
+    await updateDoc(
+      doc(requireDb(), CHATS_COLLECTION, key, MESSAGES_COLLECTION, lastUserMessageId),
+      {
+        seenByMentor: true,
+      }
     );
   }
 
-  await withTimeout(
-    pb.collection(CHATS_COLLECTION).update(conversation.id, {
+  await setDoc(
+    conversationRef(key),
+    {
       lastSeenByMentor: true,
       activeForMentor: true,
       updatedAt: new Date().toISOString(),
-    }),
-    WRITE_TIMEOUT_MS
+    },
+    { merge: true }
   );
 }
 
 export async function setMentorActive(conversationId, active) {
-  const pb = getPocketBase();
-  const conversationKey = `${conversationId || ''}`.trim();
-  if (!conversationKey) return;
-  const conversation = await findConversationByKey(conversationKey);
-  if (!conversation) return;
-  await withTimeout(
-    pb.collection(CHATS_COLLECTION).update(conversation.id, {
+  const key = `${conversationId || ''}`.trim();
+  if (!key) return;
+  await setDoc(
+    conversationRef(key),
+    {
       activeForMentor: Boolean(active),
       updatedAt: new Date().toISOString(),
-    }),
-    WRITE_TIMEOUT_MS
+    },
+    { merge: true }
   );
 }
 
 export async function markReadForUser(conversationId) {
-  const pb = getPocketBase();
-  const conversationKey = `${conversationId || ''}`.trim();
-  if (!conversationKey) return;
-  const conversation = await findConversationByKey(conversationKey);
-  if (!conversation) return;
-  await withTimeout(
-    pb.collection(CHATS_COLLECTION).update(conversation.id, {
+  const key = `${conversationId || ''}`.trim();
+  if (!key) return;
+  await setDoc(
+    conversationRef(key),
+    {
       unreadForUser: 0,
       updatedAt: new Date().toISOString(),
-    }),
-    WRITE_TIMEOUT_MS
+    },
+    { merge: true }
   );
 }
 

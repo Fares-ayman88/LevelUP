@@ -1,11 +1,20 @@
 import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  setDoc,
+  where,
+} from 'firebase/firestore';
+import {
   createUserWithEmailAndPassword,
   signInAnonymously,
   signInWithEmailAndPassword,
 } from 'firebase/auth';
 
-import { auth } from './firebase.js';
-import { getPocketBase } from './pocketbase.js';
+import { auth, db } from './firebase.js';
 import {
   STATIC_ADMIN_PREFERRED_ALIASES,
   capitalizeAlias,
@@ -18,17 +27,21 @@ import {
 } from './staticAdmins.js';
 
 const CHATS_COLLECTION = 'support_chats';
-const MESSAGES_COLLECTION = 'support_chat_messages';
+const MESSAGES_COLLECTION = 'messages';
 const USERS_COLLECTION = 'users';
-const READ_TIMEOUT_MS = 20000;
-const WRITE_TIMEOUT_MS = 20000;
-const POLL_INTERVAL_MS = 2000;
-const MAX_IMAGE_BYTES = 700 * 1024;
-const MAX_FILE_BYTES = 300 * 1024;
+const MAX_IMAGE_BYTES = 450 * 1024;
+const MAX_FILE_BYTES = 200 * 1024;
 
 export const SUPPORT_ADMIN_NAME = 'Sa3doon';
 export const SUPPORT_ADMIN_EMAIL = 'sa3doon@levelup.admin';
 export const SUPPORT_ADMIN_AVATAR_ASSET = '/assets/support/admin.jpeg';
+
+function requireDb() {
+  if (!db) {
+    throw new Error('Firestore is not configured.');
+  }
+  return db;
+}
 
 function toInt(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
@@ -52,6 +65,13 @@ function toBool(value) {
 function toNullableDate(value) {
   if (!value) return null;
   if (value instanceof Date) return value;
+  if (typeof value?.toDate === 'function') {
+    try {
+      return value.toDate();
+    } catch {
+      return null;
+    }
+  }
   if (typeof value === 'string') {
     const parsed = new Date(value.trim());
     if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -90,21 +110,23 @@ function mapAttachment(data = {}) {
   };
 }
 
-function mapMessage(record = {}) {
+function mapMessage(snapshot) {
+  const record = snapshot.data() || {};
   const rawAttachments = Array.isArray(record.attachments) ? record.attachments : [];
   return {
-    id: `${record.id || ''}`.trim(),
+    id: snapshot.id,
     senderRole: `${record.senderRole || ''}`.trim(),
     text: `${record.text || ''}`,
     type: `${record.type || 'text'}`.trim(),
-    createdAt: toDate(record.createdAt || record.created),
+    createdAt: toDate(record.createdAt),
     attachments: rawAttachments.map((item) => mapAttachment(item)),
   };
 }
 
-function mapSummary(record = {}) {
+function mapSummary(snapshot) {
+  const record = snapshot.data() || {};
   return {
-    chatId: `${record.id || ''}`.trim(),
+    chatId: snapshot.id,
     userId: `${record.userId || ''}`.trim(),
     userName: `${record.userName || ''}`.trim(),
     userEmail: `${record.userEmail || ''}`.trim(),
@@ -113,7 +135,7 @@ function mapSummary(record = {}) {
     adminEmail: `${record.adminEmail || ''}`.trim(),
     lastMessage: `${record.lastMessage || ''}`.trim(),
     lastMessageSender: record.lastMessageSender ? `${record.lastMessageSender}` : '',
-    lastMessageAt: toNullableDate(record.lastMessageAt || record.updated || record.created),
+    lastMessageAt: toNullableDate(record.lastMessageAt || record.updatedAt || record.createdAt),
     unreadForAdmin: toInt(record.unreadForAdmin),
     unreadForUser: toInt(record.unreadForUser),
     lastReadByAdminAt: toNullableDate(record.lastReadByAdminAt),
@@ -123,7 +145,8 @@ function mapSummary(record = {}) {
   };
 }
 
-function mapAdmin(record = {}) {
+function mapAdmin(snapshot) {
+  const record = snapshot.data() || {};
   const rawName = (
     record.fullName ||
     record.name ||
@@ -163,7 +186,7 @@ function mapAdmin(record = {}) {
     .trim();
 
   return {
-    id: `${record.id || ''}`.trim(),
+    id: snapshot.id,
     name: resolvedName,
     email,
     avatarUrl,
@@ -173,41 +196,29 @@ function mapAdmin(record = {}) {
   };
 }
 
-async function withTimeout(promise, timeoutMs = READ_TIMEOUT_MS) {
-  let timerId = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timerId = setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timerId) clearTimeout(timerId);
-  }
+function sortChats(items = []) {
+  const copy = items.slice();
+  copy.sort((left, right) => {
+    const a = left.lastMessageAt ? left.lastMessageAt.getTime() : 0;
+    const b = right.lastMessageAt ? right.lastMessageAt.getTime() : 0;
+    return b - a;
+  });
+  return copy;
 }
 
-function isAdminRecord(data = {}) {
-  const role = `${data.role || ''}`.trim().toLowerCase();
-  if (role === 'admin') return true;
-  if (data.isAdmin === true || data.admin === true || data.is_admin === true) return true;
+function sortMessages(items = []) {
+  const copy = items.slice();
+  copy.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  return copy;
+}
 
-  const supportRole = `${data.supportRole || data.support_role || data.support || ''}`.trim().toLowerCase();
-  if (supportRole === 'admin' || supportRole === 'support') return true;
-  if (data.supportAdmin === true || data.support_admin === true) return true;
-
-  const email = `${data.email || ''}`.trim().toLowerCase();
-  if (email && isStaticAdminEmail(email)) return true;
-  if (email) {
-    const alias = extractAliasFromEmail(email);
-    if (isStaticAdminAlias(alias)) return true;
-  }
-
-  const name = `${data.fullName || data.name || data.nickName || data.username || ''}`.trim().toLowerCase();
-  if (name && isStaticAdminAlias(name)) return true;
-  if (name.includes('sa3doon') || name.includes('mahmoud') || name.includes('fares')) return true;
-
-  return false;
+function adminScore(admin) {
+  let score = 0;
+  if (admin.approved) score += 4;
+  if (admin.isActive) score += 2;
+  if (admin.avatarUrl) score += 1;
+  if (admin.name && admin.name.toLowerCase() !== 'admin') score += 1;
+  return score;
 }
 
 function dedupeAdmins(admins) {
@@ -222,22 +233,12 @@ function dedupeAdmins(admins) {
   return Array.from(byKey.values());
 }
 
-function adminScore(admin) {
-  let score = 0;
-  if (admin.approved) score += 4;
-  if (admin.isActive) score += 2;
-  if (admin.avatarUrl) score += 1;
-  if (admin.name && admin.name.toLowerCase() !== 'admin') score += 1;
-  return score;
-}
-
 function adminMatchesAlias(admin, alias) {
   const normalized = alias.trim().toLowerCase();
   if (!normalized) return false;
   if (extractAliasFromEmail(admin.email) === normalized) return true;
   const name = `${admin.name || ''}`.trim().toLowerCase();
-  if (name === normalized || name.includes(normalized)) return true;
-  return false;
+  return name === normalized || name.includes(normalized);
 }
 
 function fallbackAdmins() {
@@ -264,150 +265,7 @@ function orderPreferredAdmins(admins) {
   return ordered;
 }
 
-async function findChatById(chatId) {
-  const pb = getPocketBase();
-  const key = `${chatId || ''}`.trim();
-  if (!key) return null;
-  try {
-    return await withTimeout(pb.collection(CHATS_COLLECTION).getOne(key), READ_TIMEOUT_MS);
-  } catch {
-    return null;
-  }
-}
-
-async function findChatByUserId(userId) {
-  const pb = getPocketBase();
-  const uid = `${userId || ''}`.trim();
-  if (!uid) return null;
-  const filter = pb.filter('userId = {:userId}', { userId: uid });
-  const result = await withTimeout(
-    pb.collection(CHATS_COLLECTION).getList(1, 1, {
-      filter,
-      sort: '-updated',
-    }),
-    READ_TIMEOUT_MS
-  );
-  if (!result?.items?.length) return null;
-  return result.items[0];
-}
-
-async function findChatRecord(chatIdOrUserId, allowUserIdFallback) {
-  const value = `${chatIdOrUserId || ''}`.trim();
-  if (!value) return null;
-  const byId = await findChatById(value);
-  if (byId) return byId;
-  if (!allowUserIdFallback) return null;
-  return findChatByUserId(value);
-}
-
-async function fetchAdminChats() {
-  const pb = getPocketBase();
-  const records = await withTimeout(
-    pb.collection(CHATS_COLLECTION).getFullList({ sort: '-lastMessageAt,-updated' }),
-    READ_TIMEOUT_MS
-  );
-  const chats = records.map((item) => mapSummary(item));
-  chats.sort((left, right) => {
-    const a = left.lastMessageAt ? left.lastMessageAt.getTime() : 0;
-    const b = right.lastMessageAt ? right.lastMessageAt.getTime() : 0;
-    return b - a;
-  });
-  return chats;
-}
-
-async function fetchUserChats(userId) {
-  const pb = getPocketBase();
-  const uid = `${userId || ''}`.trim();
-  if (!uid) return [];
-  const filter = pb.filter('userId = {:userId}', { userId: uid });
-  const records = await withTimeout(
-    pb.collection(CHATS_COLLECTION).getFullList({
-      filter,
-      sort: '-lastMessageAt,-updated',
-    }),
-    READ_TIMEOUT_MS
-  );
-  const chats = records.map((item) => mapSummary(item));
-  chats.sort((left, right) => {
-    const a = left.lastMessageAt ? left.lastMessageAt.getTime() : 0;
-    const b = right.lastMessageAt ? right.lastMessageAt.getTime() : 0;
-    return b - a;
-  });
-  return chats;
-}
-
-async function fetchAdmins() {
-  const pb = getPocketBase();
-  try {
-    const records = await withTimeout(
-      pb.collection(USERS_COLLECTION).getFullList({
-        sort: '-updated',
-      }),
-      READ_TIMEOUT_MS
-    );
-    const admins = records.filter((item) => isAdminRecord(item)).map((item) => mapAdmin(item));
-    const deduped = dedupeAdmins(admins);
-    const approved = deduped.filter((admin) => admin.approved);
-    const active = deduped.filter((admin) => admin.isActive);
-    const result = approved.length ? approved : active.length ? active : deduped;
-    const preferred = orderPreferredAdmins(result);
-    if (preferred.length) return preferred;
-    if (result.length) {
-      return result.sort((left, right) => left.name.toLowerCase().localeCompare(right.name.toLowerCase()));
-    }
-  } catch {}
-  return fallbackAdmins();
-}
-
-async function fetchChatSummary(chatId) {
-  const record = await findChatRecord(chatId, true);
-  return record ? mapSummary(record) : null;
-}
-
-async function fetchMessages(chatId) {
-  const pb = getPocketBase();
-  const chat = await findChatRecord(chatId, true);
-  const chatKey = `${chat?.userId || chatId || ''}`.trim();
-  if (!chatKey) return [];
-  const filter = pb.filter('chatKey = {:chatKey}', { chatKey });
-  const records = await withTimeout(
-    pb.collection(MESSAGES_COLLECTION).getFullList({
-      filter,
-      sort: 'createdAt,created',
-    }),
-    READ_TIMEOUT_MS
-  );
-  return records.map((item) => mapMessage(item));
-}
-
-function subscribeWithPolling(loader, onData, onError) {
-  let disposed = false;
-  let lastSerialized = '';
-
-  const run = async () => {
-    try {
-      const result = await loader();
-      if (disposed) return;
-      const serialized = JSON.stringify(result);
-      if (serialized === lastSerialized) return;
-      lastSerialized = serialized;
-      onData(result);
-    } catch (error) {
-      if (disposed) return;
-      if (onError) onError(error);
-    }
-  };
-
-  void run();
-  const intervalId = setInterval(() => void run(), POLL_INTERVAL_MS);
-
-  return () => {
-    disposed = true;
-    clearInterval(intervalId);
-  };
-}
-
-async function resolveUserName(user) {
+function resolveUserName(user) {
   const displayName = `${user?.displayName || ''}`.trim();
   if (displayName) return displayName;
   const email = `${user?.email || ''}`.trim();
@@ -425,79 +283,6 @@ function resolveAdminSenderId(user, adminEmail) {
   const userEmail = `${user?.email || ''}`.trim();
   if (userEmail) return userEmail;
   return `${user?.uid || ''}`.trim();
-}
-
-async function ensureChatRecordForUser(user) {
-  const pb = getPocketBase();
-  const existing = await findChatByUserId(user?.uid);
-  const now = new Date().toISOString();
-  if (!existing) {
-    return withTimeout(
-      pb.collection(CHATS_COLLECTION).create({
-        userId: `${user?.uid || ''}`.trim(),
-        userName: await resolveUserName(user),
-        userEmail: resolveUserEmail(user),
-        unreadForAdmin: 0,
-        unreadForUser: 0,
-        activeForAdmin: false,
-        activeForUser: false,
-        updatedAt: now,
-      }),
-      WRITE_TIMEOUT_MS
-    );
-  }
-
-  await withTimeout(
-    pb.collection(CHATS_COLLECTION).update(existing.id, {
-      userName: await resolveUserName(user),
-      userEmail: resolveUserEmail(user),
-      updatedAt: now,
-    }),
-    WRITE_TIMEOUT_MS
-  );
-  return withTimeout(pb.collection(CHATS_COLLECTION).getOne(existing.id), READ_TIMEOUT_MS);
-}
-
-async function updateChatSummary({
-  chat,
-  user,
-  isAdmin,
-  lastMessage,
-  now,
-  adminId,
-  adminName,
-  adminEmail,
-}) {
-  const pb = getPocketBase();
-  const unreadForAdmin = toInt(chat.unreadForAdmin);
-  const unreadForUser = toInt(chat.unreadForUser);
-  const resolvedUserId = `${chat.userId || ''}`.trim();
-  const payload = {
-    lastMessage,
-    lastMessageAt: now,
-    lastMessageSender: isAdmin ? 'admin' : 'user',
-    unreadForAdmin: isAdmin ? unreadForAdmin : unreadForAdmin + 1,
-    unreadForUser: isAdmin ? unreadForUser + 1 : unreadForUser,
-    updatedAt: now,
-  };
-
-  if (!isAdmin) {
-    payload.userId = resolvedUserId || `${user?.uid || ''}`.trim();
-    payload.userName = await resolveUserName(user);
-    payload.userEmail = resolveUserEmail(user);
-    if (`${adminId || ''}`.trim()) payload.adminId = `${adminId}`.trim();
-    if (`${adminName || ''}`.trim()) payload.adminName = `${adminName}`.trim();
-    if (`${adminEmail || ''}`.trim()) payload.adminEmail = `${adminEmail}`.trim();
-  } else {
-    const resolvedAdminEmail = `${adminEmail || user?.email || ''}`.trim();
-    const resolvedAdminId = `${adminId || user?.uid || ''}`.trim();
-    const resolvedAdminName = `${adminName || user?.displayName || capitalizeAlias(extractAliasFromEmail(resolvedAdminEmail)) || 'Admin'}`.trim();
-    if (resolvedAdminId) payload.adminId = resolvedAdminId;
-    if (resolvedAdminName) payload.adminName = resolvedAdminName;
-    if (resolvedAdminEmail) payload.adminEmail = resolvedAdminEmail;
-  }
-
-  await withTimeout(pb.collection(CHATS_COLLECTION).update(chat.id, payload), WRITE_TIMEOUT_MS);
 }
 
 function fileToBase64(file) {
@@ -522,7 +307,11 @@ async function encodeAttachments(attachments) {
   for (const attachment of attachments) {
     const maxBytes = attachment.isImage ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
     if (attachment.size > maxBytes) {
-      throw new Error(attachment.isImage ? 'Image too large (max 700KB)' : 'File too large (max 300KB)');
+      throw new Error(
+        attachment.isImage
+          ? 'Image too large (max 450KB)'
+          : 'File too large (max 200KB)'
+      );
     }
     const base64 = await fileToBase64(attachment.file);
     encoded.push({
@@ -535,6 +324,105 @@ async function encodeAttachments(attachments) {
     });
   }
   return encoded;
+}
+
+function chatRef(chatId) {
+  return doc(requireDb(), CHATS_COLLECTION, `${chatId || ''}`.trim());
+}
+
+function chatMessagesRef(chatId) {
+  return collection(requireDb(), CHATS_COLLECTION, `${chatId || ''}`.trim(), MESSAGES_COLLECTION);
+}
+
+async function findChatSnapshot(chatId) {
+  const key = `${chatId || ''}`.trim();
+  if (!key) return null;
+  const snapshot = await getDoc(chatRef(key));
+  return snapshot.exists() ? snapshot : null;
+}
+
+async function ensureChatRecordForUser(user) {
+  const uid = `${user?.uid || ''}`.trim();
+  if (!uid) throw new Error('Missing user id.');
+  const now = new Date().toISOString();
+  await setDoc(
+    chatRef(uid),
+    {
+      userId: uid,
+      userName: resolveUserName(user),
+      userEmail: resolveUserEmail(user),
+      unreadForAdmin: 0,
+      unreadForUser: 0,
+      activeForAdmin: false,
+      activeForUser: false,
+      updatedAt: now,
+      createdAt: now,
+    },
+    { merge: true }
+  );
+  const snapshot = await findChatSnapshot(uid);
+  return snapshot ? mapSummary(snapshot) : null;
+}
+
+async function updateChatSummary({
+  chatId,
+  user,
+  isAdmin,
+  lastMessage,
+  now,
+  adminId,
+  adminName,
+  adminEmail,
+}) {
+  const snapshot = await findChatSnapshot(chatId);
+  if (!snapshot) return;
+  const chat = mapSummary(snapshot);
+  const unreadForAdmin = toInt(chat.unreadForAdmin);
+  const unreadForUser = toInt(chat.unreadForUser);
+
+  const payload = {
+    lastMessage,
+    lastMessageAt: now,
+    lastMessageSender: isAdmin ? 'admin' : 'user',
+    unreadForAdmin: isAdmin ? unreadForAdmin : unreadForAdmin + 1,
+    unreadForUser: isAdmin ? unreadForUser + 1 : unreadForUser,
+    updatedAt: now,
+  };
+
+  if (!isAdmin) {
+    payload.userId = `${chat.userId || user?.uid || ''}`.trim();
+    payload.userName = resolveUserName(user);
+    payload.userEmail = resolveUserEmail(user);
+    if (`${adminId || ''}`.trim()) payload.adminId = `${adminId}`.trim();
+    if (`${adminName || ''}`.trim()) payload.adminName = `${adminName}`.trim();
+    if (`${adminEmail || ''}`.trim()) payload.adminEmail = `${adminEmail}`.trim();
+  } else {
+    const resolvedAdminEmail = `${adminEmail || user?.email || ''}`.trim();
+    const resolvedAdminId = `${adminId || user?.uid || ''}`.trim();
+    const resolvedAdminName = `${
+      adminName ||
+      user?.displayName ||
+      capitalizeAlias(extractAliasFromEmail(resolvedAdminEmail)) ||
+      'Admin'
+    }`.trim();
+    if (resolvedAdminId) payload.adminId = resolvedAdminId;
+    if (resolvedAdminName) payload.adminName = resolvedAdminName;
+    if (resolvedAdminEmail) payload.adminEmail = resolvedAdminEmail;
+  }
+
+  await setDoc(chatRef(chatId), payload, { merge: true });
+}
+
+async function currentUserIsAdmin() {
+  const email = `${auth?.currentUser?.email || ''}`.trim().toLowerCase();
+  if (email && isStaticAdminEmail(email)) return true;
+  if (!db || !auth?.currentUser?.uid) return false;
+  try {
+    const userSnapshot = await getDoc(doc(db, USERS_COLLECTION, auth.currentUser.uid));
+    return userSnapshot.exists() && `${userSnapshot.data()?.role || ''}`.trim().toLowerCase() === 'admin';
+  } catch {
+    return false;
+  }
 }
 
 export async function ensureSignedIn() {
@@ -580,23 +468,110 @@ export async function ensureAdminAliasSignedIn(alias, plainPassword) {
 }
 
 export function subscribeAdminChats(onData, onError) {
-  return subscribeWithPolling(() => fetchAdminChats(), onData, onError);
+  if (!db) {
+    onData?.([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    collection(db, CHATS_COLLECTION),
+    (snapshot) => {
+      const items = snapshot.docs.map((docItem) => mapSummary(docItem));
+      onData?.(sortChats(items));
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeUserChats(userId, onData, onError) {
-  return subscribeWithPolling(() => fetchUserChats(userId), onData, onError);
+  const uid = `${userId || ''}`.trim();
+  if (!uid || !db) {
+    onData?.([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    chatRef(uid),
+    (snapshot) => {
+      onData?.(snapshot.exists() ? [mapSummary(snapshot)] : []);
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeAdmins(onData, onError) {
-  return subscribeWithPolling(() => fetchAdmins(), onData, onError);
+  const fallback = fallbackAdmins();
+  onData?.(fallback);
+
+  if (!db || !auth?.currentUser) {
+    return () => {};
+  }
+
+  let unsubscribeUsers = () => {};
+  let closed = false;
+
+  void currentUserIsAdmin().then((isAdmin) => {
+    if (!isAdmin || closed) return;
+    unsubscribeUsers = onSnapshot(
+      query(collection(db, USERS_COLLECTION), where('role', '==', 'admin')),
+      (snapshot) => {
+        const admins = snapshot.docs.map((docItem) => mapAdmin(docItem));
+        const deduped = dedupeAdmins(admins);
+        const preferred = orderPreferredAdmins(deduped);
+        onData?.(preferred.length ? preferred : deduped.length ? deduped : fallback);
+      },
+      (error) => {
+        onError?.(error);
+        onData?.(fallback);
+      }
+    );
+  });
+
+  return () => {
+    closed = true;
+    unsubscribeUsers();
+  };
 }
 
 export function subscribeChatSummary(chatId, onData, onError) {
-  return subscribeWithPolling(() => fetchChatSummary(chatId), onData, onError);
+  const key = `${chatId || ''}`.trim();
+  if (!key || !db) {
+    onData?.(null);
+    return () => {};
+  }
+
+  return onSnapshot(
+    chatRef(key),
+    (snapshot) => {
+      onData?.(snapshot.exists() ? mapSummary(snapshot) : null);
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeMessages(chatId, onData, onError) {
-  return subscribeWithPolling(() => fetchMessages(chatId), onData, onError);
+  const key = `${chatId || ''}`.trim();
+  if (!key || !db) {
+    onData?.([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    chatMessagesRef(key),
+    (snapshot) => {
+      const items = snapshot.docs.map((docItem) => mapMessage(docItem));
+      onData?.(sortMessages(items));
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export async function ensureChatForUser(user) {
@@ -604,29 +579,29 @@ export async function ensureChatForUser(user) {
 }
 
 export async function markRead({ chatId, isAdmin }) {
-  const pb = getPocketBase();
-  const chat = await findChatRecord(chatId, true);
-  if (!chat) return;
-  await withTimeout(
-    pb.collection(CHATS_COLLECTION).update(chat.id, {
+  const key = `${chatId || ''}`.trim();
+  if (!key) return;
+  await setDoc(
+    chatRef(key),
+    {
       [isAdmin ? 'unreadForAdmin' : 'unreadForUser']: 0,
       [isAdmin ? 'lastReadByAdminAt' : 'lastReadByUserAt']: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    }),
-    WRITE_TIMEOUT_MS
+    },
+    { merge: true }
   );
 }
 
 export async function setActive({ chatId, isAdmin, active }) {
-  const pb = getPocketBase();
-  const chat = await findChatRecord(chatId, true);
-  if (!chat) return;
-  await withTimeout(
-    pb.collection(CHATS_COLLECTION).update(chat.id, {
+  const key = `${chatId || ''}`.trim();
+  if (!key) return;
+  await setDoc(
+    chatRef(key),
+    {
       [isAdmin ? 'activeForAdmin' : 'activeForUser']: Boolean(active),
       updatedAt: new Date().toISOString(),
-    }),
-    WRITE_TIMEOUT_MS
+    },
+    { merge: true }
   );
 }
 
@@ -639,35 +614,31 @@ export async function sendText({
   adminName,
   adminEmail,
 }) {
-  const pb = getPocketBase();
+  const key = `${chatId || ''}`.trim();
   const trimmed = `${text || ''}`.trim();
-  if (!trimmed) return;
+  if (!key || !trimmed) return;
 
-  const chat = isAdmin
-    ? await findChatRecord(chatId, true)
-    : await ensureChatRecordForUser(user);
-  if (!chat) return;
+  const snapshot = isAdmin ? await findChatSnapshot(key) : null;
+  if (isAdmin && !snapshot) return;
 
-  const chatKey = `${chat.userId || ''}`.trim();
-  if (!chatKey) return;
+  const resolvedChatId = isAdmin ? key : `${user?.uid || ''}`.trim();
+  if (!isAdmin) {
+    await ensureChatRecordForUser(user);
+  }
   const now = new Date().toISOString();
 
-  await withTimeout(
-    pb.collection(MESSAGES_COLLECTION).create({
-      chatId: chat.id,
-      chatKey,
-      senderRole: isAdmin ? 'admin' : 'user',
-      senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
-      text: trimmed,
-      type: 'text',
-      attachments: [],
-      createdAt: now,
-    }),
-    WRITE_TIMEOUT_MS
-  );
+  await addDoc(chatMessagesRef(resolvedChatId), {
+    chatId: resolvedChatId,
+    senderRole: isAdmin ? 'admin' : 'user',
+    senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
+    text: trimmed,
+    type: 'text',
+    attachments: [],
+    createdAt: now,
+  });
 
   await updateChatSummary({
-    chat,
+    chatId: resolvedChatId,
     user,
     isAdmin,
     lastMessage: previewText(trimmed),
@@ -720,35 +691,33 @@ export async function sendAttachments({
     return;
   }
 
-  const pb = getPocketBase();
-  const chat = isAdmin
-    ? await findChatRecord(chatId, true)
-    : await ensureChatRecordForUser(user);
-  if (!chat) return;
-  const chatKey = `${chat.userId || ''}`.trim();
-  if (!chatKey) return;
+  const key = `${chatId || ''}`.trim();
+  if (!key) return;
 
+  const snapshot = isAdmin ? await findChatSnapshot(key) : null;
+  if (isAdmin && !snapshot) return;
+
+  const resolvedChatId = isAdmin ? key : `${user?.uid || ''}`.trim();
+  if (!isAdmin) {
+    await ensureChatRecordForUser(user);
+  }
   const type = allImages ? 'images' : 'files';
   const uploaded = await encodeAttachments(list);
   if (!uploaded.length) return;
   const now = new Date().toISOString();
 
-  await withTimeout(
-    pb.collection(MESSAGES_COLLECTION).create({
-      chatId: chat.id,
-      chatKey,
-      senderRole: isAdmin ? 'admin' : 'user',
-      senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
-      text: '',
-      type,
-      attachments: uploaded,
-      createdAt: now,
-    }),
-    WRITE_TIMEOUT_MS
-  );
+  await addDoc(chatMessagesRef(resolvedChatId), {
+    chatId: resolvedChatId,
+    senderRole: isAdmin ? 'admin' : 'user',
+    senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
+    text: '',
+    type,
+    attachments: uploaded,
+    createdAt: now,
+  });
 
   await updateChatSummary({
-    chat,
+    chatId: resolvedChatId,
     user,
     isAdmin,
     lastMessage: type === 'images' ? 'Image' : previewText(uploaded[0].name),
@@ -787,4 +756,3 @@ export async function signInFallbackPreferredAdmins() {
   }
   return null;
 }
-
