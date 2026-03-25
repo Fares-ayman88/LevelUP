@@ -23,7 +23,7 @@ npm run dev
 
 1. Import this repository into Vercel.
 2. Keep the root directory as the repository root.
-3. Add `OPENAI_API_KEY` if you want AI chat enabled in production.
+3. Add `GEMINI_API_KEY` for the built-in AI chat route.
 4. Add `VITE_PB_ENDPOINT` only if you have a public PocketBase server.
 5. Redeploy.
 
