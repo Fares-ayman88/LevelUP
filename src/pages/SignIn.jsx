@@ -17,6 +17,8 @@ import {
   signOut as signOutCurrentUser,
 } from '../state/auth.jsx';
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function SignIn() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,6 +28,8 @@ export default function SignIn() {
   const [loading, setLoading] = useState(false);
   const consumedRouteState = useRef(false);
   const consumedGoogleRedirect = useRef(false);
+  const normalizedEmail = email.trim();
+  const canUseForgotPassword = EMAIL_PATTERN.test(normalizedEmail);
 
   useEffect(() => {
     const state = location.state || {};
@@ -41,9 +45,14 @@ export default function SignIn() {
   }, [location.state, location.pathname, navigate, email]);
 
   const handleForgot = () => {
+    if (!canUseForgotPassword) {
+      toast.warn('Type the email you want to recover the password for first.');
+      return;
+    }
+
     navigate('/forgot-password', {
       state: {
-        email: email.trim(),
+        email: normalizedEmail,
       },
     });
   };
@@ -267,7 +276,12 @@ export default function SignIn() {
                 </div>
 
                 <div className="auth-row auth-row--between auth-row--meta">
-                  <button type="button" className="auth-forgot" onClick={handleForgot}>
+                  <button
+                    type="button"
+                    className={`auth-forgot ${canUseForgotPassword ? '' : 'auth-forgot--disabled'}`.trim()}
+                    onClick={handleForgot}
+                    aria-disabled={!canUseForgotPassword}
+                  >
                     Forgot Password?
                   </button>
               
