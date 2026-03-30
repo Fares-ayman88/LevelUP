@@ -7,7 +7,6 @@ import { IconEye, IconEyeOff } from '../components/Icons.jsx';
 import {
   getAuthErrorMessage,
   saveUserProfile,
-  signOut as signOutCurrentUser,
   signUpWithEmail,
   updateAuthDisplayName,
 } from '../state/auth.jsx';
@@ -67,10 +66,12 @@ export default function SignUp() {
           toast.info('Account created. You can complete profile details later.');
         }
       }
-      await signOutCurrentUser().catch(() => {});
-      navigate('/sign-in', {
+      navigate('/verify-email', {
         replace: true,
-        state: { email: value, verificationSent: true },
+        state: {
+          email: value,
+          redirectTo: '/home',
+        },
       });
     } catch (error) {
       toast.error(getAuthErrorMessage(error));

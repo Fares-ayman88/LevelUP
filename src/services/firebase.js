@@ -36,6 +36,7 @@ let db = null;
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
+  auth.useDeviceLanguage();
   db = getFirestore(app);
 } else {
   console.warn('Firebase is not configured. Set VITE_FIREBASE_* env values.');

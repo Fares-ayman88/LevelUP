@@ -5,11 +5,12 @@ import { toast } from 'react-toastify';
 import MainBottomNav from '../components/MainBottomNav.jsx';
 import { IconEye, IconEyeOff } from '../components/Icons.jsx';
 import {
+  checkEmailVerificationRequirement,
+  completeGoogleRedirectSignIn,
   fetchUserProfile,
   getAuthErrorMessage,
+  getVerificationEmail,
   resolveStaticAdminAlias,
-  sendPasswordReset,
-  sendVerificationEmailForUser,
   signInStaticAdmin,
   signInWithEmail,
   signInWithGoogle,
@@ -24,13 +25,14 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const consumedRouteState = useRef(false);
+  const consumedGoogleRedirect = useRef(false);
 
   useEffect(() => {
     const state = location.state || {};
     if (consumedRouteState.current) return;
     if (state?.email && !email) setEmail(state.email);
     if (state?.verificationSent) {
-      toast.info(`Verification email sent to ${state.email || 'your inbox'}. Confirm it before logging in.`);
+      toast.info(`Verification code sent to ${state.email || 'your inbox'}. Confirm it before logging in.`);
     }
     if (state?.email || state?.verificationSent) {
       consumedRouteState.current = true;
@@ -38,18 +40,12 @@ export default function SignIn() {
     }
   }, [location.state, location.pathname, navigate, email]);
 
-  const handleForgot = async () => {
-    const value = email.trim();
-    if (!value) {
-      toast.warn('Enter your email to reset the password.');
-      return;
-    }
-    try {
-      await sendPasswordReset(value);
-      toast.success(`Password reset link sent to ${value}`);
-    } catch (error) {
-      toast.error(getAuthErrorMessage(error));
-    }
+  const handleForgot = () => {
+    navigate('/forgot-password', {
+      state: {
+        email: email.trim(),
+      },
+    });
   };
 
   const handleResendVerification = async () => {
@@ -71,13 +67,19 @@ export default function SignIn() {
         toast.error('Could not verify this account right now.');
         return;
       }
-      if (signedUser.emailVerified) {
-        toast.info('This email is already verified.');
+      const verificationRequired = await checkEmailVerificationRequirement(signedUser);
+      if (!verificationRequired) {
+        toast.info('This email is already verified. Use Sign In to continue.');
+        await signOutCurrentUser().catch(() => {});
       } else {
-        await sendVerificationEmailForUser(signedUser);
-        toast.success(`Verification email sent to ${rawEmail}. Check Inbox/Spam/Promotions.`);
+        navigate('/verify-email', {
+          replace: true,
+          state: {
+            email: getVerificationEmail(signedUser),
+            redirectTo: '/home',
+          },
+        });
       }
-      await signOutCurrentUser().catch(() => {});
     } catch (error) {
       toast.error(getAuthErrorMessage(error));
     } finally {
@@ -109,6 +111,31 @@ export default function SignIn() {
     navigate(needsProfile ? '/fill-profile' : '/home', { replace: true });
   };
 
+  useEffect(() => {
+    if (consumedGoogleRedirect.current) return;
+    consumedGoogleRedirect.current = true;
+
+    let cancelled = false;
+
+    const resolveGoogleRedirect = async () => {
+      try {
+        const result = await completeGoogleRedirectSignIn();
+        if (!result || cancelled) return;
+        await handleSuccess(result);
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(getAuthErrorMessage(error));
+        }
+      }
+    };
+
+    resolveGoogleRedirect();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
   const handleSignIn = async () => {
     if (loading) return;
     const rawEmail = email.trim();
@@ -125,14 +152,18 @@ export default function SignIn() {
       } else {
         const result = await signInWithEmail(rawEmail, password);
         const signedUser = result?.user;
-        if (signedUser && !signedUser.emailVerified) {
-          try {
-            await sendVerificationEmailForUser(signedUser);
-            toast.info('Email is not verified yet. We sent a verification link to your inbox.');
-          } catch {
-            // Ignore resend failure and still block unverified sign-in.
-          }
-          await signOutCurrentUser().catch(() => {});
+        const verificationRequired = signedUser
+          ? await checkEmailVerificationRequirement(signedUser)
+          : false;
+        if (signedUser && verificationRequired) {
+          toast.info('Enter the verification code from your email to finish signing in.');
+          navigate('/verify-email', {
+            replace: true,
+            state: {
+              email: getVerificationEmail(signedUser),
+              redirectTo: '/home',
+            },
+          });
           return;
         }
         await handleSuccess(result, { forceHome: true });
@@ -148,13 +179,9 @@ export default function SignIn() {
     if (loading) return;
     setLoading(true);
     try {
-      const result = await signInWithGoogle();
-      const isNewUser = Boolean(result?.additionalUserInfo?.isNewUser);
-      if (isNewUser) {
-        navigate('/fill-profile', { replace: true });
-      } else {
-        navigate('/home', { replace: true });
-      }
+      const result = await signInWithGoogle({ loginHint: email.trim() });
+      if (result?.redirecting) return;
+      await handleSuccess(result);
     } catch (error) {
       toast.error(getAuthErrorMessage(error));
     } finally {
@@ -206,12 +233,12 @@ export default function SignIn() {
                 
 
                 <div className="auth-field-block">
-                  <label className="auth-field-label" htmlFor="login-email">Email or admin alias</label>
+                  <label className="auth-field-label" htmlFor="login-email">Email </label>
                   <div className="auth-field">
                     <input
                       id="login-email"
                       type="email"
-                      placeholder="you@example.com or fares"
+                      placeholder="you@example.com"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                     />
@@ -243,9 +270,7 @@ export default function SignIn() {
                   <button type="button" className="auth-forgot" onClick={handleForgot}>
                     Forgot Password?
                   </button>
-                  <button type="button" className="auth-resend" onClick={handleResendVerification}>
-                    Resend verification
-                  </button>
+              
                 </div>
 
                 <button
@@ -262,13 +287,20 @@ export default function SignIn() {
                 <div className="auth-socials">
                   <button
                     type="button"
-                    className="social-button"
+                    className="auth-google-btn"
                     onClick={handleGoogle}
-                    aria-label="Continue with Google"
+                    aria-label="Sign in with Google"
+                    disabled={loading}
                   >
-                    <img src="/assets/auth_buttons/google.svg" alt="Google" className="auth-google-icon" />
+                    <span className="auth-google-btn__content">
+                      <img
+                        src="/assets/auth_buttons/google.svg"
+                        alt="Google"
+                        className="auth-google-icon !w-[40px] !h-[40px]"
+                      />
+                      <span className="auth-google-btn__label">Sign in with Google</span>
+                    </span>
                   </button>
-                
                 </div>
 
                 <div className="auth-footer">

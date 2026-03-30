@@ -1,6 +1,7 @@
 import RootRedirect from './pages/RootRedirect.jsx';
 import SignIn from './pages/SignIn.jsx';
 import SignUp from './pages/SignUp.jsx';
+import VerifyEmail from './pages/VerifyEmail.jsx';
 import FillProfile from './pages/FillProfile.jsx';
 import CreatePin from './pages/CreatePin.jsx';
 import BiometricSetup from './pages/BiometricSetup.jsx';
@@ -60,6 +61,7 @@ export const routeConfig = [
   { path: '/', title: 'Root', component: RootRedirect },
   { path: '/sign-in', title: 'Sign In', component: SignIn },
   { path: '/sign-up', title: 'Sign Up', component: SignUp },
+  { path: '/verify-email', title: 'Verify Email', component: VerifyEmail },
   { path: '/fill-profile', title: 'Fill Profile', component: FillProfile },
   { path: '/create-pin', title: 'Create PIN', component: CreatePin },
   { path: '/biometric-setup', title: 'Biometric Setup', component: BiometricSetup },
