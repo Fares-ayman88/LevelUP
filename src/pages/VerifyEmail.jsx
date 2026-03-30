@@ -14,12 +14,6 @@ import {
 
 const VERIFY_COOLDOWN_SECONDS = 30;
 const OTP_PATTERN = /^\d{6,8}$/;
-const SHOWCASE_CHIPS = ['PocketBase OTP', 'Inbox testing', 'Safer password accounts'];
-const SHOWCASE_METRICS = [
-  { value: '30s', label: 'Resend cooldown' },
-  { value: '1', label: 'Code to enter' },
-  { value: '0', label: 'Firebase mail links' },
-];
 
 function getCodeValidationMessage(value) {
   const normalizedValue = value.toString().trim();
@@ -135,6 +129,150 @@ export default function VerifyEmail() {
     });
   };
 
+  const showcaseAccordionItems = hasSession
+    ? [
+        {
+          key: 'verification-controls',
+          icon: 'admin_panel_settings',
+          title: 'Verification controls',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>pin</span>
+                <div>
+                  <strong>Enter the newest code only</strong>
+                  <p>The latest verification email is the one that matches the current session.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>schedule</span>
+                <div>
+                  <strong>30 second resend cooldown</strong>
+                  <p>Wait for the resend timer so you do not generate extra codes by mistake.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'inbox-testing',
+          icon: 'mail_lock',
+          title: 'Inbox testing',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>inbox_customize</span>
+                <div>
+                  <strong>Check Inbox, Spam, and Promotions</strong>
+                  <p>We are comparing deliverability here, so the folder where the message lands matters.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>star</span>
+                <div>
+                  <strong>Mark the sender as safe</strong>
+                  <p>If the code lands outside Inbox, add the sender to safe contacts for future messages.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'after-verify',
+          icon: 'task_alt',
+          title: 'After verification',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>login</span>
+                <div>
+                  <strong>Unlock the password account</strong>
+                  <p>Once the code is valid, the account is treated as verified and the gate is lifted.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>school</span>
+                <div>
+                  <strong>Continue inside LevelUp</strong>
+                  <p>You return to the same account flow without leaving the web app for an email link.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+      ]
+    : [
+        {
+          key: 'why-verification',
+          icon: 'shield',
+          title: 'Why we ask for it',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>mail_lock</span>
+                <div>
+                  <strong>Inbox ownership check</strong>
+                  <p>Password-based accounts stay blocked until the email owner proves access to the mailbox.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>verified_user</span>
+                <div>
+                  <strong>Protection before entry</strong>
+                  <p>This prevents unverified addresses from using the account normally.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'what-changed',
+          icon: 'swap_horiz',
+          title: 'What changed',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>key</span>
+                <div>
+                  <strong>PocketBase OTP on web</strong>
+                  <p>This flow now uses one-time codes instead of Firebase email links so we can compare delivery behavior.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>web</span>
+                <div>
+                  <strong>Stay in the same journey</strong>
+                  <p>You verify inside the app instead of hopping out to a browser action link.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'next-step',
+          icon: 'login',
+          title: 'Next step',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>account_circle</span>
+                <div>
+                  <strong>Sign in again first</strong>
+                  <p>We need an active password-account session before a code can be requested for verification.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>person_add</span>
+                <div>
+                  <strong>Or create a fresh account</strong>
+                  <p>If this is not the right account, start over with the correct sign-up flow.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+      ];
+
   return (
     <AuthRecoveryLayout
       pageLabel="Verify email"
@@ -144,8 +282,7 @@ export default function VerifyEmail() {
       showcaseEyebrow="Account Security"
       showcaseTitle="Verify once, then continue without friction."
       showcaseSubtitle="This web flow now uses PocketBase OTP instead of Firebase mail links, so we can compare inbox placement and keep the verification step inside the same polished auth journey."
-      showcaseChips={SHOWCASE_CHIPS}
-      showcaseMetrics={SHOWCASE_METRICS}
+      showcaseAccordionItems={showcaseAccordionItems}
     >
       <div className="forgot-reset-panel__inner">
         <div className="forgot-reset-panel__top">
@@ -159,7 +296,7 @@ export default function VerifyEmail() {
         </div>
 
         {!hasSession ? (
-          <div className="forgot-reset-panel__content forgot-reset-panel__content--submitted">
+          <div className="forgot-reset-panel__content forgot-reset-panel__content--single">
             <div className="forgot-reset-panel__main">
               <div className="forgot-reset-panel__status forgot-reset-panel__status--warning">
                 <div className="forgot-reset-panel__status-icon forgot-reset-panel__status-icon--warning" aria-hidden>
@@ -190,26 +327,9 @@ export default function VerifyEmail() {
                 </button>
               </div>
             </div>
-
-            <aside className="forgot-reset-panel__aside">
-              <article className="forgot-reset-panel__usecase forgot-reset-panel__usecase--soft">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>mail_lock</span>
-                <div>
-                  <strong>Why the extra step?</strong>
-                  <p>Password-based accounts stay blocked until the email owner proves access to the inbox.</p>
-                </div>
-              </article>
-              <article className="forgot-reset-panel__usecase forgot-reset-panel__usecase--soft">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>shield</span>
-                <div>
-                  <strong>What changed?</strong>
-                  <p>The web app now uses PocketBase OTP instead of Firebase verification links for this flow.</p>
-                </div>
-              </article>
-            </aside>
           </div>
         ) : (
-          <div className="forgot-reset-panel__content">
+          <div className="forgot-reset-panel__content forgot-reset-panel__content--single">
             <div className="forgot-reset-panel__main">
               <div className="forgot-reset-panel__status">
                 <div className="forgot-reset-panel__status-icon forgot-reset-panel__spotlight--success" aria-hidden>
@@ -270,55 +390,7 @@ export default function VerifyEmail() {
                         : 'Resend verification code')}
                 </button>
               </div>
-
-              <div className="forgot-reset-panel__help">
-                <article className="forgot-reset-panel__help-item">
-                  <span className="material-icons-round" aria-hidden>mark_email_read</span>
-                  <div>
-                    <strong>Can&apos;t find it?</strong>
-                    <p>Check Inbox, Spam, and Promotions first. The latest email is the correct one to trust.</p>
-                  </div>
-                </article>
-                <article className="forgot-reset-panel__help-item">
-                  <span className="material-icons-round" aria-hidden>verified_user</span>
-                  <div>
-                    <strong>Trying to improve deliverability</strong>
-                    <p>This flow is ready for PocketBase SMTP testing so we can compare inbox placement against Firebase.</p>
-                  </div>
-                </article>
-                <article className="forgot-reset-panel__help-item">
-                  <span className="material-icons-round" aria-hidden>manage_accounts</span>
-                  <div>
-                    <strong>Wrong email?</strong>
-                    <p>Use the secondary action above to sign in with the correct account before entering the code.</p>
-                  </div>
-                </article>
-              </div>
             </div>
-
-            <aside className="forgot-reset-panel__aside">
-              <article className="forgot-reset-panel__usecase">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>contact_mail</span>
-                <div>
-                  <strong>Add the sender to safe contacts</strong>
-                  <p>If you receive the code in Spam or Promotions, mark it as safe so future messages have a better chance of landing in Inbox.</p>
-                </div>
-              </article>
-              <article className="forgot-reset-panel__usecase">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>schedule</span>
-                <div>
-                  <strong>Code expired?</strong>
-                  <p>Request a fresh one after the cooldown. Only the newest code should be entered.</p>
-                </div>
-              </article>
-              <article className="forgot-reset-panel__usecase">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>login</span>
-                <div>
-                  <strong>What happens next?</strong>
-                  <p>As soon as the code is valid, you’ll be sent back into LevelUp and your password account will be treated as verified.</p>
-                </div>
-              </article>
-            </aside>
           </div>
         )}
       </div>

@@ -10,12 +10,6 @@ import {
 } from '../state/auth.jsx';
 
 const MIN_PASSWORD_LENGTH = 6;
-const SHOWCASE_CHIPS = ['Verified reset links', 'Strong password habits', 'Fast way back in'];
-const SHOWCASE_METRICS = [
-  { value: '6+', label: 'Characters minimum' },
-  { value: '1', label: 'Fresh password' },
-  { value: '0', label: 'Extra OTP steps' },
-];
 
 export default function CreateNewPassword() {
   const navigate = useNavigate();
@@ -128,6 +122,129 @@ export default function CreateNewPassword() {
     },
   ];
 
+  const showcaseAccordionItems = showForm
+    ? [
+        {
+          key: 'password-rules',
+          icon: 'rule',
+          title: 'Password rules',
+          content: (
+            <div className="auth-showcase__accordion-stack">
+              <p className="auth-showcase__accordion-copy">
+                Keep this checklist green before you save the new password for {email || 'your account'}.
+              </p>
+              <div className="auth-showcase__accordion-checks">
+                {passwordChecks.map((item) => (
+                  <div
+                    key={item.label}
+                    className={`auth-showcase__accordion-check ${item.passed ? 'is-active' : ''}`}
+                  >
+                    <span className="material-icons-round" aria-hidden>
+                      {item.passed ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'link-safety',
+          icon: 'verified_user',
+          title: 'Reset link safety',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>link</span>
+                <div>
+                  <strong>One-time recovery link</strong>
+                  <p>This reset link should be treated as private and cannot be reused after a successful save.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>mail</span>
+                <div>
+                  <strong>Latest email wins</strong>
+                  <p>If you asked for more than one reset email, the newest message is the safe one to follow.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'after-save',
+          icon: 'login',
+          title: 'After you save',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>lock_reset</span>
+                <div>
+                  <strong>Old password is retired</strong>
+                  <p>Use the new password only after this step completes.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>school</span>
+                <div>
+                  <strong>Progress stays intact</strong>
+                  <p>Your roadmap, profile, and course history stay right where you left them.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+      ]
+    : [
+        {
+          key: 'link-status',
+          icon: 'link_off',
+          title: 'Why the link stopped',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>timer_off</span>
+                <div>
+                  <strong>Links can expire</strong>
+                  <p>Reset links stop working after their valid window passes or after they were already used.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>warning</span>
+                <div>
+                  <strong>Wrong or incomplete link</strong>
+                  <p>Opening an old email or a broken URL can also bring you here.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          key: 'next-step',
+          icon: 'refresh',
+          title: 'Best next step',
+          content: (
+            <div className="auth-showcase__accordion-points">
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>mail_lock</span>
+                <div>
+                  <strong>Request a fresh email</strong>
+                  <p>Go back to forgot password and generate a new link from the latest request.</p>
+                </div>
+              </div>
+              <div className="auth-showcase__accordion-point">
+                <span className="material-icons-round" aria-hidden>login</span>
+                <div>
+                  <strong>Return to sign in</strong>
+                  <p>If you remember the password after all, you can leave this flow and sign in directly.</p>
+                </div>
+              </div>
+            </div>
+          ),
+        },
+      ];
+
   return (
     <AuthRecoveryLayout
       pageLabel="Create new password"
@@ -139,8 +256,7 @@ export default function CreateNewPassword() {
       showcaseEyebrow="Password Update"
       showcaseTitle="Give your next sign-in a cleaner start."
       showcaseSubtitle="The reset screen now follows the same premium login experience while keeping the security steps clear and lightweight."
-      showcaseChips={SHOWCASE_CHIPS}
-      showcaseMetrics={SHOWCASE_METRICS}
+      showcaseAccordionItems={showcaseAccordionItems}
     >
       <div className="forgot-reset-panel__inner">
         <div className="forgot-reset-panel__top">
@@ -158,7 +274,7 @@ export default function CreateNewPassword() {
         </div>
 
         {showForm ? (
-          <div className="forgot-reset-panel__content">
+          <div className="forgot-reset-panel__content forgot-reset-panel__content--single">
             <div className="forgot-reset-panel__main">
               <div className="forgot-reset-panel__intro">
                 <div className="forgot-reset-panel__spotlight forgot-reset-panel__spotlight--success">
@@ -233,42 +349,6 @@ export default function CreateNewPassword() {
                 </button>
               </div>
             </div>
-
-            <aside className="forgot-reset-panel__aside">
-              <article className="forgot-reset-panel__usecase forgot-reset-panel__usecase--soft">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>rule</span>
-                <div>
-                  <strong>Password checklist</strong>
-                  <div className="forgot-reset-panel__checklist">
-                    {passwordChecks.map((item) => (
-                      <div
-                        key={item.label}
-                        className={`forgot-reset-panel__check ${item.passed ? 'is-passed' : ''}`}
-                      >
-                        <span className="material-icons-round" aria-hidden>
-                          {item.passed ? 'check_circle' : 'radio_button_unchecked'}
-                        </span>
-                        <span>{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </article>
-              <article className="forgot-reset-panel__usecase">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>lock_clock</span>
-                <div>
-                  <strong>Make it memorable</strong>
-                  <p>Use at least 6 characters and avoid recycling older passwords or very obvious patterns.</p>
-                </div>
-              </article>
-              <article className="forgot-reset-panel__usecase">
-                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>done_all</span>
-                <div>
-                  <strong>One-step finish</strong>
-                  <p>After saving, we take you back to sign in with the updated password and the same email.</p>
-                </div>
-              </article>
-            </aside>
           </div>
         ) : (
           <div className="forgot-reset-panel__empty">

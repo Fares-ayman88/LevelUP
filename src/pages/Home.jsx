@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Accordion, AccordionItem } from '@heroui/react';
 
 import MainBottomNav from '../components/MainBottomNav.jsx';
 import {
@@ -10,6 +11,7 @@ import {
   subscribeMentors,
   toggleCourseSaved,
 } from '../services/homeData.js';
+import { completedCourses, ongoingCourses } from '../data/myCourses.js';
 import { resolveAuthRole, useAuth } from '../state/auth.jsx';
 import './HomeLayout.css';
 
@@ -321,46 +323,181 @@ export default function Home() {
       : isStudent
         ? 'Student'
         : 'Guest';
-  const actionByKey = new Map(sidebarActions.map((action) => [action.key, action]));
-  const quickActionKeys = isStudent
-    ? ['continueLearning', 'savedCourses', 'support']
-    : isAdmin
-      ? ['add', 'requests', 'sort']
-      : isInstructor
-        ? ['add', 'history']
-        : ['notifications'];
-  const quickActions = quickActionKeys
-    .map((key) => actionByKey.get(key))
-    .filter(Boolean);
-  const railTitle = isAdmin
-    ? 'Admin tools'
+  const sidebarControlsTitle = isAdmin
+    ? 'Admin controls'
     : isInstructor
-      ? 'Instructor tools'
-      : 'Quick access';
-  const railDescription = isAdmin
-    ? 'Use the most important controls without repeating the full menu.'
+      ? 'Instructor controls'
+      : 'Learning controls';
+  const sidebarControlsSubtitle = isAdmin
+    ? 'Manage content, requests, and notifications from one place.'
     : isInstructor
-      ? 'Keep teaching actions close and leave the rest to the main content.'
-      : 'Reach your next step fast without overloading the page.';
-  const sidebarStats = [
+      ? 'Keep your teaching actions and alerts within easy reach.'
+      : 'Open the key student areas without crowding the page.';
+  const savedCoursesCount = courses.filter((course) => course.bookmarked).length;
+  const enrolledCoursesCount = ongoingCourses.length + completedCourses.length;
+  const learningStats = [
     {
-      key: 'courses',
-      label: 'Courses',
-      value: `${courses.length}`,
+      key: 'enrolled',
+      label: 'Enrolled',
+      value: `${enrolledCoursesCount}`,
     },
     {
-      key: 'mentors',
-      label: 'Mentors',
-      value: `${mentors.length}`,
+      key: 'ongoing',
+      label: 'Ongoing',
+      value: `${ongoingCourses.length}`,
     },
     {
-      key: 'categories',
-      label: 'Categories',
-      value: `${categories.length}`,
+      key: 'completed',
+      label: 'Done',
+      value: `${completedCourses.length}`,
     },
   ];
-  const currentViewLabel = activeFilter === 'All' ? 'All categories' : activeFilter;
-  const currentViewText = `${visibleCourses.length} course${visibleCourses.length === 1 ? '' : 's'} in view`;
+  const learningActions = [
+    {
+      key: 'myCourses',
+      label: 'My Courses',
+      hint: 'Open every course you are currently taking or already finished.',
+      icon: 'menu_book',
+      variant: 'round',
+      onClick: () => navigate('/my-courses'),
+    },
+    {
+      key: 'savedCourses',
+      label: 'Saved Courses',
+      hint: 'Return to the bookmarked courses you want to revisit next.',
+      icon: 'bookmark_border',
+      variant: 'outlined',
+      onClick: () => navigate('/saved-courses'),
+    },
+    {
+      key: 'certificates',
+      label: 'Certificates',
+      hint: 'Review the certificates you unlocked from completed courses.',
+      icon: 'workspace_premium',
+      variant: 'round',
+      onClick: () => navigate('/certificate'),
+    },
+  ];
+  const topProgressCourses = ongoingCourses
+    .slice()
+    .sort((left, right) => {
+      const leftRatio = left.progressTotal > 0 ? left.progress / left.progressTotal : 0;
+      const rightRatio = right.progressTotal > 0 ? right.progress / right.progressTotal : 0;
+      return rightRatio - leftRatio;
+    })
+    .slice(0, 3)
+    .map((course) => ({
+      ...course,
+      progressPercent: course.progressTotal > 0
+        ? Math.min(100, Math.round((course.progress / course.progressTotal) * 100))
+        : 0,
+    }));
+  const continueCourse = topProgressCourses[0] || ongoingCourses[0] || null;
+
+  const renderSidebarAction = (action, className, keyPrefix) => (
+    <button
+      key={`${keyPrefix}-${action.key}`}
+      type="button"
+      className={className}
+      onClick={action.onClick}
+    >
+      <span className={`${className}__icon`}>
+        <ActionIcon icon={action.icon} variant={action.variant || 'round'} />
+      </span>
+      <span className={`${className}__text`}>
+        <strong>{action.label}</strong>
+        <small>{action.hint}</small>
+      </span>
+    </button>
+  );
+
+  const sidebarAccordionItems = [
+    {
+      key: 'controls',
+      icon: 'dashboard_customize',
+      title: sidebarControlsTitle,
+      subtitle: sidebarControlsSubtitle,
+      content: (
+        <div className="home-sidebar-control-list">
+          {sidebarActions.map((action) => renderSidebarAction(action, 'home-sidebar-control', 'control'))}
+        </div>
+      ),
+    },
+    {
+      key: 'library',
+      icon: 'library_books',
+      title: 'My course library',
+      subtitle: 'See the courses you joined, saved, and already finished.',
+      content: (
+        <div className="home-sidebar-snapshot">
+          <div className="home-sidebar-snapshot-grid">
+            {learningStats.map((item) => (
+              <div key={`learning-${item.key}`} className="home-sidebar-snapshot-card">
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="home-sidebar-note home-sidebar-note--focus">
+            <span>Saved right now</span>
+            <strong>{savedCoursesCount} course{savedCoursesCount === 1 ? '' : 's'}</strong>
+            <small>
+              {savedCoursesCount > 0
+                ? 'Your bookmarked courses are ready whenever you want to return to them.'
+                : 'Bookmark a course to keep it close and return to it faster later.'}
+            </small>
+          </div>
+          <div className="home-sidebar-recommendations">
+            {learningActions.map((action) =>
+              renderSidebarAction(action, 'home-sidebar-recommendation', 'learning')
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'progress',
+      icon: 'track_changes',
+      title: 'Where you stopped',
+      subtitle: 'Track how far you reached in the courses still in progress.',
+      content: (
+        <div className="home-sidebar-progress-list">
+          {topProgressCourses.map((course) => (
+            <button
+              key={`progress-${course.title}`}
+              type="button"
+              className="home-sidebar-progress-card"
+              onClick={() => navigate('/ongoing-course', { state: { course } })}
+            >
+              <div className="home-sidebar-progress-card__top">
+                <strong>{course.title}</strong>
+                <span>{course.progressPercent}%</span>
+              </div>
+              <small>{course.category} • {course.progress}/{course.progressTotal} lessons done</small>
+              <div className="home-sidebar-progress-card__track">
+                <div
+                  className="home-sidebar-progress-card__fill"
+                  style={{
+                    width: `${course.progressPercent}%`,
+                    background: course.progressColor,
+                  }}
+                />
+              </div>
+            </button>
+          ))}
+          <div className="home-sidebar-note home-sidebar-note--focus home-sidebar-note--accent">
+            <span>Continue next</span>
+            <strong>{continueCourse ? continueCourse.title : 'No active course yet'}</strong>
+            <small>
+              {continueCourse
+                ? `Resume from lesson ${continueCourse.progress} of ${continueCourse.progressTotal} whenever you are ready.`
+                : 'Start a course and your latest learning progress will appear here.'}
+            </small>
+          </div>
+        </div>
+      ),
+    },
+  ];
 
   const promo = PROMO_SLIDES[promoIndex];
 
@@ -399,22 +536,42 @@ export default function Home() {
                 <p>{subtitle}</p>
               </div>
             </div>
-            <div className="home-sidebar-focus">
-              <div className="home-sidebar-controls__title">Overview</div>
-              <div className="home-sidebar-metrics">
-                {sidebarStats.map((item) => (
-                  <div key={item.key} className="home-sidebar-metric">
-                    <strong>{item.value}</strong>
-                    <span>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="home-sidebar-note home-sidebar-note--focus">
-                <span>Current view</span>
-                <strong>{currentViewLabel}</strong>
-                <small>{currentViewText}</small>
-              </div>
-            </div>
+            <Accordion
+              className="home-sidebar-accordion"
+              defaultExpandedKeys={['controls']}
+              isCompact
+              itemClasses={{
+                base: 'home-sidebar-accordion__item',
+                content: 'home-sidebar-accordion__content',
+                heading: 'home-sidebar-accordion__heading',
+                indicator: 'home-sidebar-accordion__indicator',
+                startContent: 'home-sidebar-accordion__start',
+                subtitle: 'home-sidebar-accordion__subtitle',
+                title: 'home-sidebar-accordion__title',
+                titleWrapper: 'home-sidebar-accordion__titlewrap',
+                trigger: 'home-sidebar-accordion__trigger',
+              }}
+              selectionMode="multiple"
+              showDivider={false}
+              variant="light"
+            >
+              {sidebarAccordionItems.map((item) => (
+                <AccordionItem
+                  key={item.key}
+                  aria-label={item.title}
+                  indicator={<span className="material-icons-round" aria-hidden>expand_more</span>}
+                  startContent={(
+                    <span className="home-sidebar-accordion__icon material-icons-round" aria-hidden>
+                      {item.icon}
+                    </span>
+                  )}
+                  subtitle={item.subtitle}
+                  title={item.title}
+                >
+                  {item.content}
+                </AccordionItem>
+              ))}
+            </Accordion>
           </div>
         </aside>
         <div className="screen home-main">
@@ -641,53 +798,6 @@ export default function Home() {
             </div>
           </section>
         </div>
-        <aside className="home-rightbar" aria-label="Workspace shortcuts">
-          <div className="home-rail-card">
-            <div className="home-rail-card__header">
-              <span className="home-rail-card__eyebrow">{railTitle}</span>
-              <h3>Quick actions</h3>
-              <p>{railDescription}</p>
-            </div>
-            <div className="home-rail-actions">
-              {quickActions.map((action) => (
-                <button
-                  key={`rail-${action.key}`}
-                  type="button"
-                  className="home-rail-action"
-                  onClick={action.onClick}
-                >
-                  <span className="home-rail-action__icon">
-                    <ActionIcon icon={action.icon} variant={action.variant || 'round'} />
-                  </span>
-                  <span className="home-rail-action__text">
-                    <strong>{action.label}</strong>
-                    <small>{action.hint}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="home-rail-card home-rail-card--soft">
-            <div className="home-rail-card__header">
-              <span className="home-rail-card__eyebrow">Snapshot</span>
-              <h3>At a glance</h3>
-              <p>Small signals to help you scan the page faster.</p>
-            </div>
-            <div className="home-rail-stats">
-              {sidebarStats.map((item) => (
-                <div key={`stat-${item.key}`} className="home-rail-stat">
-                  <strong>{item.value}</strong>
-                  <span>{item.label}</span>
-                </div>
-              ))}
-            </div>
-            <div className="home-rail-focus">
-              <span>Current view</span>
-              <strong>{currentViewLabel}</strong>
-              <small>{currentViewText}</small>
-            </div>
-          </div>
-        </aside>
       </div>
       <MainBottomNav currentIndex={0} />
     </div>

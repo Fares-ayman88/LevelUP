@@ -3,13 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import AuthRecoveryLayout from '../components/AuthRecoveryLayout.jsx';
 
-const SHOWCASE_CHIPS = ['Password updated', 'Ready to sign in', 'Learning flow restored'];
-const SHOWCASE_METRICS = [
-  { value: '4s', label: 'Auto redirect' },
-  { value: '1', label: 'Account secured' },
-  { value: 'Now', label: 'Continue learning' },
-];
-
 export default function PasswordResetSuccess() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,6 +19,78 @@ export default function PasswordResetSuccess() {
     return () => window.clearTimeout(timer);
   }, [email, navigate]);
 
+  const showcaseAccordionItems = [
+    {
+      key: 'handoff',
+      icon: 'login',
+      title: 'Sign-in handoff',
+      content: (
+        <div className="auth-showcase__accordion-points">
+          <div className="auth-showcase__accordion-point">
+            <span className="material-icons-round" aria-hidden>timer</span>
+            <div>
+              <strong>Automatic redirect in 4 seconds</strong>
+              <p>The flow already prepares a return to sign in, so you do not have to start over manually.</p>
+            </div>
+          </div>
+          <div className="auth-showcase__accordion-point">
+            <span className="material-icons-round" aria-hidden>email</span>
+            <div>
+              <strong>Same account email</strong>
+              <p>{email ? `You will continue with ${email}.` : 'You will continue with the same account you just recovered.'}</p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'security',
+      icon: 'security',
+      title: 'Security update',
+      content: (
+        <div className="auth-showcase__accordion-points">
+          <div className="auth-showcase__accordion-point">
+            <span className="material-icons-round" aria-hidden>lock_reset</span>
+            <div>
+              <strong>Old password is no longer valid</strong>
+              <p>The new password is now the only one that should be used for this account.</p>
+            </div>
+          </div>
+          <div className="auth-showcase__accordion-point">
+            <span className="material-icons-round" aria-hidden>verified_user</span>
+            <div>
+              <strong>Recovery completed safely</strong>
+              <p>This closes the reset flow and hands you back to normal sign-in.</p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'continuity',
+      icon: 'school',
+      title: 'Learning continuity',
+      content: (
+        <div className="auth-showcase__accordion-points">
+          <div className="auth-showcase__accordion-point">
+            <span className="material-icons-round" aria-hidden>menu_book</span>
+            <div>
+              <strong>Courses are still there</strong>
+              <p>Your saved progress, roadmap, and profile data stay exactly where you left them.</p>
+            </div>
+          </div>
+          <div className="auth-showcase__accordion-point">
+            <span className="material-icons-round" aria-hidden>rocket_launch</span>
+            <div>
+              <strong>Jump back in quickly</strong>
+              <p>Sign in with the new password and continue learning right away.</p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <AuthRecoveryLayout
       pageLabel="Password reset success"
@@ -35,8 +100,7 @@ export default function PasswordResetSuccess() {
       showcaseEyebrow="Recovery Complete"
       showcaseTitle="You are ready to jump back in."
       showcaseSubtitle="The recovery flow now closes on the same polished experience as the login pages, with a clear success handoff back to sign in."
-      showcaseChips={SHOWCASE_CHIPS}
-      showcaseMetrics={SHOWCASE_METRICS}
+      showcaseAccordionItems={showcaseAccordionItems}
     >
       <div className="forgot-reset-panel__inner forgot-reset-panel__inner--success">
         <div className="forgot-reset-panel__top">
@@ -62,30 +126,6 @@ export default function PasswordResetSuccess() {
                 : 'You can now sign in again and continue your courses.'}
             </p>
           </div>
-        </div>
-
-        <div className="forgot-reset-panel__timeline">
-          <article className="forgot-reset-panel__timeline-item">
-            <span>1</span>
-            <div>
-              <strong>Use the new password</strong>
-              <p>Your old password is no longer the one you should use for this account.</p>
-            </div>
-          </article>
-          <article className="forgot-reset-panel__timeline-item">
-            <span>2</span>
-            <div>
-              <strong>Return to sign in</strong>
-              <p>We are already preparing that step for you automatically.</p>
-            </div>
-          </article>
-          <article className="forgot-reset-panel__timeline-item">
-            <span>3</span>
-            <div>
-              <strong>Resume learning</strong>
-              <p>Your profile, roadmap, and progress stay right where you left them.</p>
-            </div>
-          </article>
         </div>
 
         <div className="forgot-reset-panel__actions">
