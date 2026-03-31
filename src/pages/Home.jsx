@@ -207,23 +207,6 @@ export default function Home() {
     },
   ];
 
-  const instructorControlActions = [
-    {
-      key: 'add',
-      label: 'Add',
-      icon: 'add',
-      variant: 'round',
-      onClick: () => navigate('/mentor-courses'),
-    },
-    {
-      key: 'history',
-      label: 'History',
-      icon: 'history',
-      variant: 'round',
-      onClick: () => navigate('/mentor-transactions'),
-    },
-  ];
-
   const notificationAction = {
     key: 'notifications',
     label: 'Notifications',
@@ -240,82 +223,15 @@ export default function Home() {
     requests: 'Handle instructor applications',
     sort: 'Arrange featured home sections',
     notifications: 'Check latest alerts and announcements',
-    continueLearning: 'Jump back to your in-progress lessons',
-    myCourses: 'Browse all courses you are enrolled in',
-    completedCourses: 'Review courses you have finished',
-    certificates: 'View and download your earned certificates',
-    savedCourses: 'Open your bookmarked courses',
-    transactions: 'See recent purchases and payment receipts',
-    support: 'Chat with support when you need help',
   };
 
-  const studentActions = [
-    {
-      key: 'continueLearning',
-      label: 'Continue Learning',
-      icon: 'play_circle',
-      variant: 'round',
-      onClick: () => navigate('/ongoing-course'),
-    },
-    {
-      key: 'myCourses',
-      label: 'My Courses',
-      icon: 'menu_book',
-      variant: 'round',
-      onClick: () => navigate('/my-courses'),
-    },
-    {
-      key: 'completedCourses',
-      label: 'Completed',
-      icon: 'task_alt',
-      variant: 'round',
-      onClick: () => navigate('/completed-course'),
-    },
-    {
-      key: 'certificates',
-      label: 'Certificates',
-      icon: 'workspace_premium',
-      variant: 'round',
-      onClick: () => navigate('/certificate'),
-    },
-    {
-      key: 'savedCourses',
-      label: 'Saved Courses',
-      icon: 'bookmark_border',
-      variant: 'outlined',
-      onClick: () => navigate('/saved-courses'),
-    },
-    {
-      key: 'transactions',
-      label: 'Transactions',
-      icon: 'receipt_long',
-      variant: 'outlined',
-      onClick: () => navigate('/transactions'),
-    },
-    {
-      key: 'support',
-      label: 'Support',
-      icon: 'support_agent',
-      variant: 'round',
-      onClick: () => navigate('/support-chats'),
-    },
-    { ...notificationAction },
-  ];
-
-  const sidebarActionsByRole = isStudent
-    ? studentActions
-    : isAdmin
-      ? [...adminControlActions, { ...notificationAction }]
-      : isInstructor
-        ? [...instructorControlActions, { ...notificationAction }]
-        : [{ ...notificationAction }];
-
-  const sidebarActions = sidebarActionsByRole.map(
+  const sidebarActions = (isAdmin ? [...adminControlActions, { ...notificationAction }] : []).map(
     (action) => ({
       ...action,
       hint: actionHints[action.key] || 'Open this section',
     })
   );
+  const showSidebarControls = isAdmin && sidebarActions.length > 0;
   const roleBadge = isAdmin
     ? 'Admin'
     : isInstructor
@@ -323,16 +239,6 @@ export default function Home() {
       : isStudent
         ? 'Student'
         : 'Guest';
-  const sidebarControlsTitle = isAdmin
-    ? 'Admin controls'
-    : isInstructor
-      ? 'Instructor controls'
-      : 'Learning controls';
-  const sidebarControlsSubtitle = isAdmin
-    ? 'Manage content, requests, and notifications from one place.'
-    : isInstructor
-      ? 'Keep your teaching actions and alerts within easy reach.'
-      : 'Open the key student areas without crowding the page.';
   const savedCoursesCount = courses.filter((course) => course.bookmarked).length;
   const enrolledCoursesCount = ongoingCourses.length + completedCourses.length;
   const learningStats = [
@@ -378,22 +284,6 @@ export default function Home() {
       onClick: () => navigate('/certificate'),
     },
   ];
-  const topProgressCourses = ongoingCourses
-    .slice()
-    .sort((left, right) => {
-      const leftRatio = left.progressTotal > 0 ? left.progress / left.progressTotal : 0;
-      const rightRatio = right.progressTotal > 0 ? right.progress / right.progressTotal : 0;
-      return rightRatio - leftRatio;
-    })
-    .slice(0, 3)
-    .map((course) => ({
-      ...course,
-      progressPercent: course.progressTotal > 0
-        ? Math.min(100, Math.round((course.progress / course.progressTotal) * 100))
-        : 0,
-    }));
-  const continueCourse = topProgressCourses[0] || ongoingCourses[0] || null;
-
   const renderSidebarAction = (action, className, keyPrefix) => (
     <button
       key={`${keyPrefix}-${action.key}`}
@@ -411,91 +301,55 @@ export default function Home() {
     </button>
   );
 
+  const librarySidebarContent = (
+    <div className="home-sidebar-snapshot">
+      <div className="home-sidebar-snapshot-grid">
+        {learningStats.map((item) => (
+          <div key={`learning-${item.key}`} className="home-sidebar-snapshot-card">
+            <strong>{item.value}</strong>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="home-sidebar-note home-sidebar-note--focus">
+        <span>Saved right now</span>
+        <strong>{savedCoursesCount} course{savedCoursesCount === 1 ? '' : 's'}</strong>
+        <small>
+          {savedCoursesCount > 0
+            ? 'Your bookmarked courses are ready whenever you want to return to them.'
+            : 'Bookmark a course to keep it close and return to it faster later.'}
+        </small>
+      </div>
+      <div className="home-sidebar-recommendations">
+        {learningActions.map((action) =>
+          renderSidebarAction(action, 'home-sidebar-recommendation', 'learning')
+        )}
+      </div>
+    </div>
+  );
+
   const sidebarAccordionItems = [
-    {
-      key: 'controls',
-      icon: 'dashboard_customize',
-      title: sidebarControlsTitle,
-      subtitle: sidebarControlsSubtitle,
-      content: (
-        <div className="home-sidebar-control-list">
-          {sidebarActions.map((action) => renderSidebarAction(action, 'home-sidebar-control', 'control'))}
-        </div>
-      ),
-    },
+    ...(showSidebarControls
+      ? [{
+          key: 'controls',
+          icon: 'dashboard_customize',
+          title: 'Admin controls',
+          subtitle: 'Manage content, requests, and notifications from one place.',
+          content: (
+            <div className="home-sidebar-control-list">
+              {sidebarActions.map((action) =>
+                renderSidebarAction(action, 'home-sidebar-control', 'control')
+              )}
+            </div>
+          ),
+        }]
+      : []),
     {
       key: 'library',
       icon: 'library_books',
       title: 'My course library',
       subtitle: 'See the courses you joined, saved, and already finished.',
-      content: (
-        <div className="home-sidebar-snapshot">
-          <div className="home-sidebar-snapshot-grid">
-            {learningStats.map((item) => (
-              <div key={`learning-${item.key}`} className="home-sidebar-snapshot-card">
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="home-sidebar-note home-sidebar-note--focus">
-            <span>Saved right now</span>
-            <strong>{savedCoursesCount} course{savedCoursesCount === 1 ? '' : 's'}</strong>
-            <small>
-              {savedCoursesCount > 0
-                ? 'Your bookmarked courses are ready whenever you want to return to them.'
-                : 'Bookmark a course to keep it close and return to it faster later.'}
-            </small>
-          </div>
-          <div className="home-sidebar-recommendations">
-            {learningActions.map((action) =>
-              renderSidebarAction(action, 'home-sidebar-recommendation', 'learning')
-            )}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'progress',
-      icon: 'track_changes',
-      title: 'Where you stopped',
-      subtitle: 'Track how far you reached in the courses still in progress.',
-      content: (
-        <div className="home-sidebar-progress-list">
-          {topProgressCourses.map((course) => (
-            <button
-              key={`progress-${course.title}`}
-              type="button"
-              className="home-sidebar-progress-card"
-              onClick={() => navigate('/ongoing-course', { state: { course } })}
-            >
-              <div className="home-sidebar-progress-card__top">
-                <strong>{course.title}</strong>
-                <span>{course.progressPercent}%</span>
-              </div>
-              <small>{course.category} • {course.progress}/{course.progressTotal} lessons done</small>
-              <div className="home-sidebar-progress-card__track">
-                <div
-                  className="home-sidebar-progress-card__fill"
-                  style={{
-                    width: `${course.progressPercent}%`,
-                    background: course.progressColor,
-                  }}
-                />
-              </div>
-            </button>
-          ))}
-          <div className="home-sidebar-note home-sidebar-note--focus home-sidebar-note--accent">
-            <span>Continue next</span>
-            <strong>{continueCourse ? continueCourse.title : 'No active course yet'}</strong>
-            <small>
-              {continueCourse
-                ? `Resume from lesson ${continueCourse.progress} of ${continueCourse.progressTotal} whenever you are ready.`
-                : 'Start a course and your latest learning progress will appear here.'}
-            </small>
-          </div>
-        </div>
-      ),
+      content: librarySidebarContent,
     },
   ];
 
@@ -536,42 +390,53 @@ export default function Home() {
                 <p>{subtitle}</p>
               </div>
             </div>
-            <Accordion
-              className="home-sidebar-accordion"
-              defaultExpandedKeys={['controls']}
-              isCompact
-              itemClasses={{
-                base: 'home-sidebar-accordion__item',
-                content: 'home-sidebar-accordion__content',
-                heading: 'home-sidebar-accordion__heading',
-                indicator: 'home-sidebar-accordion__indicator',
-                startContent: 'home-sidebar-accordion__start',
-                subtitle: 'home-sidebar-accordion__subtitle',
-                title: 'home-sidebar-accordion__title',
-                titleWrapper: 'home-sidebar-accordion__titlewrap',
-                trigger: 'home-sidebar-accordion__trigger',
-              }}
-              selectionMode="multiple"
-              showDivider={false}
-              variant="light"
-            >
-              {sidebarAccordionItems.map((item) => (
-                <AccordionItem
-                  key={item.key}
-                  aria-label={item.title}
-                  indicator={<span className="material-icons-round" aria-hidden>expand_more</span>}
-                  startContent={(
-                    <span className="home-sidebar-accordion__icon material-icons-round" aria-hidden>
-                      {item.icon}
-                    </span>
-                  )}
-                  subtitle={item.subtitle}
-                  title={item.title}
-                >
-                  {item.content}
-                </AccordionItem>
-              ))}
-            </Accordion>
+            {isStudent ? (
+              <div
+                className="home-sidebar-recommendations home-sidebar-recommendations--student"
+                aria-label="Student quick links"
+              >
+                {learningActions.map((action) =>
+                  renderSidebarAction(action, 'home-sidebar-recommendation', 'student-learning')
+                )}
+              </div>
+            ) : (
+              <Accordion
+                className="home-sidebar-accordion"
+                defaultExpandedKeys={showSidebarControls ? ['controls'] : ['library']}
+                isCompact
+                itemClasses={{
+                  base: 'home-sidebar-accordion__item',
+                  content: 'home-sidebar-accordion__content',
+                  heading: 'home-sidebar-accordion__heading',
+                  indicator: 'home-sidebar-accordion__indicator',
+                  startContent: 'home-sidebar-accordion__start',
+                  subtitle: 'home-sidebar-accordion__subtitle',
+                  title: 'home-sidebar-accordion__title',
+                  titleWrapper: 'home-sidebar-accordion__titlewrap',
+                  trigger: 'home-sidebar-accordion__trigger',
+                }}
+                selectionMode="multiple"
+                showDivider={false}
+                variant="light"
+              >
+                {sidebarAccordionItems.map((item) => (
+                  <AccordionItem
+                    key={item.key}
+                    aria-label={item.title}
+                    indicator={<span className="material-icons-round" aria-hidden>expand_more</span>}
+                    startContent={(
+                      <span className="home-sidebar-accordion__icon material-icons-round" aria-hidden>
+                        {item.icon}
+                      </span>
+                    )}
+                    subtitle={item.subtitle}
+                    title={item.title}
+                  >
+                    {item.content}
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            )}
           </div>
         </aside>
         <div className="screen home-main">

@@ -10,6 +10,12 @@ import {
 
 const RESET_COOLDOWN_SECONDS = 30;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SHOWCASE_CHIPS = ['Secure email links', 'Fast recovery', 'No account guessing'];
+const SHOWCASE_METRICS = [
+  { value: '24/7', label: 'Self-service help' },
+  { value: '30s', label: 'Resend cooldown' },
+  { value: '100%', label: 'Progress preserved' },
+];
 
 function getEmailValidationMessage(value) {
   if (!value) return 'Enter the email linked to your account.';
@@ -92,162 +98,6 @@ export default function ForgotPassword() {
     });
   };
 
-  const showcaseAccordionItems = submitted
-    ? [
-        {
-          key: 'delivery',
-          icon: 'forward_to_inbox',
-          title: 'Inbox checklist',
-          content: (
-            <div className="auth-showcase__accordion-stack">
-              <p className="auth-showcase__accordion-copy">
-                Look for the newest reset email sent to {submittedEmail || 'your inbox'} before using resend.
-              </p>
-              <div className="auth-showcase__accordion-points">
-                <div className="auth-showcase__accordion-point">
-                  <span className="material-icons-round" aria-hidden>mark_email_read</span>
-                  <div>
-                    <strong>Check every mailbox tab</strong>
-                    <p>Inbox, Spam, and Promotions are all worth checking before you request another link.</p>
-                  </div>
-                </div>
-                <div className="auth-showcase__accordion-point">
-                  <span className="material-icons-round" aria-hidden>verified</span>
-                  <div>
-                    <strong>Use the latest message</strong>
-                    <p>The most recent email is the one to trust if you requested more than once.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          key: 'recovery-steps',
-          icon: 'published_with_changes',
-          title: 'Recovery steps',
-          content: (
-            <div className="auth-showcase__accordion-points">
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>looks_one</span>
-                <div>
-                  <strong>Open the email</strong>
-                  <p>Use the reset link from the newest message only.</p>
-                </div>
-              </div>
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>looks_two</span>
-                <div>
-                  <strong>Create a new password</strong>
-                  <p>Choose a password you have not used recently on this account.</p>
-                </div>
-              </div>
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>looks_3</span>
-                <div>
-                  <strong>Return to sign in</strong>
-                  <p>Come back with the same email and continue your learning normally.</p>
-                </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          key: 'privacy',
-          icon: 'shield',
-          title: 'Privacy guardrails',
-          content: (
-            <div className="auth-showcase__accordion-points">
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>visibility_off</span>
-                <div>
-                  <strong>No account guessing</strong>
-                  <p>We show a generic result so this page does not reveal whether the email exists.</p>
-                </div>
-              </div>
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>schedule</span>
-                <div>
-                  <strong>Safe resend timing</strong>
-                  <p>The resend cooldown helps avoid accidental spam and keeps the flow predictable.</p>
-                </div>
-              </div>
-            </div>
-          ),
-        },
-      ]
-    : [
-        {
-          key: 'recovery-controls',
-          icon: 'manage_accounts',
-          title: 'Recovery controls',
-          content: (
-            <div className="auth-showcase__accordion-points">
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>alternate_email</span>
-                <div>
-                  <strong>Type the exact email</strong>
-                  <p>Use the address linked to your LevelUp account so the message reaches the right inbox.</p>
-                </div>
-              </div>
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>mail_lock</span>
-                <div>
-                  <strong>Use an inbox you can open now</strong>
-                  <p>You will need immediate access to the mailbox to continue the reset securely.</p>
-                </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          key: 'delivery-tips',
-          icon: 'inbox_customize',
-          title: 'Inbox tips',
-          content: (
-            <div className="auth-showcase__accordion-points">
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>drafts</span>
-                <div>
-                  <strong>Expect a reset link</strong>
-                  <p>The email will guide you to create a new password without exposing account details on this page.</p>
-                </div>
-              </div>
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>report_gmailerrorred</span>
-                <div>
-                  <strong>Check Spam and Promotions too</strong>
-                  <p>If it is not in your main inbox, those folders are the next best place to look.</p>
-                </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          key: 'privacy',
-          icon: 'shield',
-          title: 'Privacy guardrails',
-          content: (
-            <div className="auth-showcase__accordion-points">
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>policy</span>
-                <div>
-                  <strong>Generic success messaging</strong>
-                  <p>We do not confirm whether an account exists, which protects people who type any email here.</p>
-                </div>
-              </div>
-              <div className="auth-showcase__accordion-point">
-                <span className="material-icons-round" aria-hidden>login</span>
-                <div>
-                  <strong>Quick exit path</strong>
-                  <p>If you remember your password, you can jump back to sign in right away.</p>
-                </div>
-              </div>
-            </div>
-          ),
-        },
-      ];
-
   return (
     <AuthRecoveryLayout
       pageLabel="Forgot password"
@@ -259,7 +109,8 @@ export default function ForgotPassword() {
       showcaseEyebrow="Account Recovery"
       showcaseTitle="Get back into your learning flow."
       showcaseSubtitle="Recover your account with the same polished experience as the rest of LevelUp, while keeping security and privacy front and center."
-      showcaseAccordionItems={showcaseAccordionItems}
+      showcaseChips={SHOWCASE_CHIPS}
+      showcaseMetrics={SHOWCASE_METRICS}
     >
       <div className="forgot-reset-panel__inner">
         <div className="forgot-reset-panel__top">
@@ -273,7 +124,7 @@ export default function ForgotPassword() {
         </div>
 
         {!submitted ? (
-          <div className="forgot-reset-panel__content forgot-reset-panel__content--single">
+          <div className="forgot-reset-panel__content">
             <div className="forgot-reset-panel__main">
               <div className="forgot-reset-panel__intro">
                 <div className="forgot-reset-panel__spotlight">
@@ -330,9 +181,33 @@ export default function ForgotPassword() {
                 </button>
               </div>
             </div>
+
+            <aside className="forgot-reset-panel__aside">
+              <article className="forgot-reset-panel__usecase">
+                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>mail</span>
+                <div>
+                  <strong>Didn&apos;t get the email?</strong>
+                  <p>Wait a minute, then check Spam and Promotions before asking for another link.</p>
+                </div>
+              </article>
+              <article className="forgot-reset-panel__usecase">
+                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>alternate_email</span>
+                <div>
+                  <strong>Using Google sign-in?</strong>
+                  <p>Password reset emails only work for password-based accounts. If you normally use Google, go back and sign in with Google instead.</p>
+                </div>
+              </article>
+              <article className="forgot-reset-panel__usecase">
+                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>edit</span>
+                <div>
+                  <strong>Typed the wrong address?</strong>
+                  <p>Update the email before sending, so the reset link goes to the correct inbox the first time.</p>
+                </div>
+              </article>
+            </aside>
           </div>
         ) : (
-          <div className="forgot-reset-panel__content forgot-reset-panel__content--single">
+          <div className="forgot-reset-panel__content forgot-reset-panel__content--submitted">
             <div className="forgot-reset-panel__main">
               <div className="forgot-reset-panel__status">
                 <div className="forgot-reset-panel__status-icon" aria-hidden>
@@ -340,8 +215,32 @@ export default function ForgotPassword() {
                 </div>
                 <div>
                   <strong>{feedback}</strong>
-                  <p>Check Inbox, Spam, and Promotions. The newest email is the one to trust.</p>
+                  <p>Check Inbox, Spam, and Promotions. If you normally sign in with Google, no reset email will be sent for that flow.</p>
                 </div>
+              </div>
+
+              <div className="forgot-reset-panel__timeline">
+                <article className="forgot-reset-panel__timeline-item">
+                  <span>1</span>
+                  <div>
+                    <strong>Open the email</strong>
+                    <p>Look for the reset link sent to {submittedEmail || 'your inbox'}, including Spam and Promotions.</p>
+                  </div>
+                </article>
+                <article className="forgot-reset-panel__timeline-item">
+                  <span>2</span>
+                  <div>
+                    <strong>Create a new password</strong>
+                    <p>Choose something fresh and stronger than the previous one.</p>
+                  </div>
+                </article>
+                <article className="forgot-reset-panel__timeline-item">
+                  <span>3</span>
+                  <div>
+                    <strong>Sign back in</strong>
+                    <p>Return to LevelUp and continue your courses right away.</p>
+                  </div>
+                </article>
               </div>
 
               {error ? <p className="forgot-reset-panel__error">{error}</p> : null}
@@ -368,6 +267,30 @@ export default function ForgotPassword() {
                 </button>
               </div>
             </div>
+
+            <aside className="forgot-reset-panel__aside">
+              <article className="forgot-reset-panel__usecase forgot-reset-panel__usecase--soft">
+                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>schedule</span>
+                <div>
+                  <strong>Email still missing?</strong>
+                  <p>If nothing arrives after a couple of minutes, first verify the exact email address, then use resend when the cooldown reaches zero.</p>
+                </div>
+              </article>
+              <article className="forgot-reset-panel__usecase forgot-reset-panel__usecase--soft">
+                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>alternate_email</span>
+                <div>
+                  <strong>Is this a Google account?</strong>
+                  <p>Google-only accounts will not receive a password reset email here. Use the Google sign-in button on the login page instead.</p>
+                </div>
+              </article>
+              <article className="forgot-reset-panel__usecase forgot-reset-panel__usecase--soft">
+                <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>login</span>
+                <div>
+                  <strong>Ready to come back?</strong>
+                  <p>After updating the password, head back to sign in and continue from the same progress point.</p>
+                </div>
+              </article>
+            </aside>
           </div>
         )}
       </div>
