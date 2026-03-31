@@ -2,6 +2,13 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import MainBottomNav from '../components/MainBottomNav.jsx';
+import SearchFilterPopover from '../components/SearchFilterPopover.jsx';
+import {
+  applyCourseFilters,
+  filtersToSearchParams,
+  getSearchFilterAvailability,
+  searchParamsToFilters,
+} from '../components/searchFiltersLogic.js';
 import {
   fetchCourses,
   fetchMentors,
@@ -33,12 +40,16 @@ const StarIcon = ({ className }) => (
 export default function SearchResults() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || 'Graphic Design';
-
-  const [query, setQuery] = useState(initialQuery);
+  const [query, setQuery] = useState(searchParams.get('q') || '');
   const [showCourses, setShowCourses] = useState(true);
   const [courses, setCourses] = useState([]);
   const [mentors, setMentors] = useState([]);
+  const appliedFilters = useMemo(() => searchParamsToFilters(searchParams), [searchParams]);
+
+  useEffect(() => {
+    const nextQuery = searchParams.get('q') || '';
+    setQuery((current) => (current === nextQuery ? current : nextQuery));
+  }, [searchParams]);
 
   useEffect(() => {
     let isActive = true;
@@ -89,12 +100,13 @@ export default function SearchResults() {
   }, []);
 
   useEffect(() => {
-    const trimmed = query.trim();
-    const next = trimmed ? trimmed : '';
-    setSearchParams(next ? { q: next } : {});
-  }, [query, setSearchParams]);
+    const needle = query.trim().toLowerCase();
+    const nextParams = filtersToSearchParams(appliedFilters, needle);
+    if (nextParams.toString() === searchParams.toString()) return;
+    setSearchParams(nextParams, { replace: true });
+  }, [appliedFilters, query, searchParams, setSearchParams]);
 
-  const filteredCourses = useMemo(() => {
+  const queryMatchedCourses = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return courses;
     return courses.filter((course) => {
@@ -104,6 +116,14 @@ export default function SearchResults() {
       );
     });
   }, [courses, query]);
+  const courseFilterAvailability = useMemo(
+    () => getSearchFilterAvailability(queryMatchedCourses),
+    [queryMatchedCourses],
+  );
+  const filteredCourses = useMemo(
+    () => applyCourseFilters(queryMatchedCourses, appliedFilters, courseFilterAvailability),
+    [appliedFilters, courseFilterAvailability, queryMatchedCourses],
+  );
 
   const filteredMentors = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -157,16 +177,15 @@ export default function SearchResults() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Graphic Design"
           />
-          <button
-            type="button"
-            className="search-results-filter"
-            onClick={() => navigate('/filter')}
-            aria-label="Filter"
-          >
-            <span className="material-icons-round" aria-hidden>
-              tune
-            </span>
-          </button>
+          <SearchFilterPopover
+            triggerClassName="search-results-filter"
+            value={appliedFilters}
+            availability={courseFilterAvailability}
+            onApply={(nextFilters) => {
+              const nextParams = filtersToSearchParams(nextFilters, query);
+              setSearchParams(nextParams);
+            }}
+          />
         </div>
         <div className="result-tabs">
           <button

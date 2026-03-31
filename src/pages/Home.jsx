@@ -472,34 +472,6 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <div
-              className="search-bar search-bar--static"
-              onClick={() => navigate('/search-results')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  navigate('/search-results');
-                }
-              }}
-            >
-              <img src="/assets/home/Fill%201.svg" alt="Search" width={20} height={20} />
-              <span>Search for..</span>
-              <button
-                type="button"
-                className="search-filter"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  navigate('/filter');
-                }}
-                aria-label="Filter"
-              >
-                <span className="material-icons-round" aria-hidden>
-                  tune
-                </span>
-              </button>
-            </div>
           </section>
 
           <section className="home-main__promo">
@@ -664,7 +636,7 @@ export default function Home() {
           </section>
         </div>
       </div>
-      <MainBottomNav currentIndex={0} />
+      <MainBottomNav currentIndex={0} showSearch />
     </div>
   );
 }

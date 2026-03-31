@@ -67,6 +67,22 @@ function normalizeSections(raw) {
   return [];
 }
 
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 function sanitizeSections(sections = []) {
   if (!Array.isArray(sections)) return [];
   const result = [];
@@ -310,6 +326,8 @@ function mapCourse(pb, record) {
     id: record.id,
     category: `${data.category || ''}`.trim(),
     title: `${data.title || ''}`.trim(),
+    level: `${data.level || ''}`.trim(),
+    features: normalizeStringArray(data.features),
     mentorName: `${data.mentorName || ''}`.trim(),
     mentorSubtitle: `${data.mentorSubtitle || ''}`.trim(),
     mentorImagePath: mentorImage || resolveFileUrl(pb, record, data.mentorImage),
@@ -462,6 +480,8 @@ function sanitizeCoursePayload(course = {}) {
   return {
     category: `${course.category || ''}`.trim(),
     title: `${course.title || ''}`.trim(),
+    level: `${course.level || ''}`.trim(),
+    features: normalizeStringArray(course.features),
     mentorName: `${course.mentorName || ''}`.trim(),
     mentorSubtitle: `${course.mentorSubtitle || ''}`.trim(),
     mentorImageUrl: `${course.mentorImagePath || ''}`.trim(),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Navbar,
@@ -9,6 +9,10 @@ import AutoStoriesRoundedIcon from '@mui/icons-material/AutoStoriesRounded';
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
+import SearchFilterPopover from './SearchFilterPopover.jsx';
+import { filtersToSearchParams } from './searchFiltersLogic.js';
+import { createSearchFilterState } from './searchFiltersData.js';
+import './MainBottomNav.css';
 
 const NAV_ITEMS = [
   { route: '/home', label: 'Home', icon: <HomeRoundedIcon /> },
@@ -34,10 +38,12 @@ function indexFromPath(pathname = '') {
   return index >= 0 ? index : 0;
 }
 
-export default function MainBottomNav({ currentIndex, mode = 'main' }) {
+export default function MainBottomNav({ currentIndex, mode = 'main', showSearch = false }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [homeSearchFilters, setHomeSearchFilters] = useState(() => createSearchFilterState());
   const isAuthMode = mode === 'auth';
+  const showTopSearch = !isAuthMode && showSearch;
   const topNavItems = isAuthMode ? AUTH_TOP_NAV_ITEMS : TOP_NAV_ITEMS;
   const fallbackIndex = useMemo(
     () => indexFromPath(location.pathname),
@@ -72,12 +78,12 @@ export default function MainBottomNav({ currentIndex, mode = 'main' }) {
           base: 'main-top-nav__base',
           wrapper: 'main-top-nav__wrapper',
         }}
-        height="72px"
+        height="auto"
         shouldHideOnScroll={false}
         disableAnimation
         isBordered={false}
       >
-        <div className="main-top-nav__row">
+        <div className={`main-top-nav__row${showTopSearch ? ' has-search' : ''}`}>
           <button
             type="button"
             className="main-top-nav__brand"
@@ -96,6 +102,41 @@ export default function MainBottomNav({ currentIndex, mode = 'main' }) {
               <span>Learn and grow</span>
             </div>
           </button>
+          {showTopSearch ? (
+            <div className="main-top-nav__search" role="search" aria-label="Site search">
+              <button
+                type="button"
+                className="main-top-nav__search-field"
+                onClick={() => {
+                  const nextParams = filtersToSearchParams(homeSearchFilters);
+                  navigate({
+                    pathname: '/search-results',
+                    search: nextParams.toString() ? `?${nextParams.toString()}` : '',
+                  });
+                }}
+                aria-label="Open search"
+              >
+                <span className="material-icons-round" aria-hidden>
+                  search
+                </span>
+                <span className="main-top-nav__search-text">
+                  Search courses, mentors, or topics
+                </span>
+              </button>
+              <SearchFilterPopover
+                triggerClassName="main-top-nav__search-filter"
+                value={homeSearchFilters}
+                onApply={(nextFilters) => {
+                  setHomeSearchFilters(nextFilters);
+                  const nextParams = filtersToSearchParams(nextFilters);
+                  navigate({
+                    pathname: '/search-results',
+                    search: nextParams.toString() ? `?${nextParams.toString()}` : '',
+                  });
+                }}
+              />
+            </div>
+          ) : null}
           <div className="main-top-nav__links">
             {topNavItems.map((item) => {
               const isActive = desktopActivePath === item.route;
