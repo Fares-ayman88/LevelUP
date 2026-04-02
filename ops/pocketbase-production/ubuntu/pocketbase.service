@@ -1,0 +1,17 @@
+[Unit]
+Description=PocketBase
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pocketbase
+Group=pocketbase
+WorkingDirectory=/opt/pocketbase
+ExecStart=/opt/pocketbase/pocketbase serve --http=127.0.0.1:8090
+Restart=always
+RestartSec=5
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

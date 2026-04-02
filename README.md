@@ -30,5 +30,6 @@ npm run dev
 
 Firebase client config has a production fallback baked into the app, so the main auth flow can run without manual Vercel client env setup.
 The current repository also contains a temporary public PocketBase fallback URL for emergency testing only. Replace it with a stable hosted endpoint or Vercel env value before treating the deployment as production-ready.
+Production setup templates for the stable PocketBase cutover live in `ops/pocketbase-production/`.
 
 The included `vercel.json` tells Vercel to build the Vite app into `dist` and rewrite SPA routes to `index.html`.
