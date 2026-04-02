@@ -1,4 +1,9 @@
-import { getPocketBase, hasPocketBaseEndpoint, initPocketBase } from './pocketbase.js';
+import {
+  getPocketBase,
+  getPocketBaseConfigStatus,
+  hasPocketBaseEndpoint,
+  initPocketBase,
+} from './pocketbase.js';
 
 const DEFAULT_COLLECTION_NAME = 'email_otp_users';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -145,6 +150,29 @@ function randomPassword() {
 async function getClient() {
   const initialized = await initPocketBase().catch(() => null);
   const client = initialized || getPocketBase();
+  const status = getPocketBaseConfigStatus();
+
+  if (status.issue === 'missing-public-endpoint') {
+    throw new PocketBaseEmailOtpError(
+      'PocketBase is not configured for this deployed site. Set VITE_PB_ENDPOINT to a public HTTPS PocketBase URL and redeploy. A local 127.0.0.1:8090 server only works during local development.',
+      { configurationIssue: true, code: 'pb/missing-public-endpoint' }
+    );
+  }
+
+  if (status.issue === 'public-site-pointing-to-local-pocketbase') {
+    throw new PocketBaseEmailOtpError(
+      'This deployed site is pointing to a local PocketBase address. Replace the PocketBase endpoint with a public HTTPS URL. Localhost and LAN IPs cannot be reached from Vercel visitors.',
+      { configurationIssue: true, code: 'pb/local-endpoint-on-public-site' }
+    );
+  }
+
+  if (status.issue === 'configured-endpoint-unreachable') {
+    throw new PocketBaseEmailOtpError(
+      'PocketBase is configured but not reachable right now. Verify that the public endpoint is online, allows browser access, and responds to /api/health.',
+      { configurationIssue: true, code: 'pb/unreachable' }
+    );
+  }
+
   if (!client || !hasPocketBaseEndpoint()) {
     throw new PocketBaseEmailOtpError(
       'PocketBase is not configured or reachable right now. Check the PocketBase server and endpoint.',

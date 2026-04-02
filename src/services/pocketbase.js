@@ -2,6 +2,9 @@ import PocketBase from 'pocketbase';
 
 const STORAGE_KEY = 'pb_endpoint';
 const runtimeHost = typeof window !== 'undefined' ? window.location.hostname : '';
+// Temporary public fallback for the current deployment.
+// Replace this with a stable hosted PocketBase URL or VITE_PB_ENDPOINT as soon as possible.
+const PUBLIC_FALLBACK_ENDPOINT = 'https://ultimate-bride-methodology-bench.trycloudflare.com';
 
 function isLocalHost(value = '') {
   const normalized = `${value || ''}`.trim().toLowerCase();
@@ -18,12 +21,14 @@ function isLocalHost(value = '') {
 const hostCandidate = isLocalHost(runtimeHost) ? `http://${runtimeHost}:8090` : '';
 const DEFAULT_CANDIDATES = [
   import.meta.env.VITE_PB_ENDPOINT,
+  !isLocalHost(runtimeHost) ? PUBLIC_FALLBACK_ENDPOINT : '',
   hostCandidate,
   ...(isLocalHost(runtimeHost) ? ['http://127.0.0.1:8090', 'http://localhost:8090'] : []),
 ];
 
 let pocketBase = null;
 let pocketBaseUrl = null;
+let pocketBaseHealthy = null;
 
 function normalize(value, fallback = '') {
   if (!value) return fallback;
@@ -36,6 +41,20 @@ function normalize(value, fallback = '') {
     normalized = normalized.slice(0, -1);
   }
   return normalized;
+}
+
+function getUrlHostname(value = '') {
+  const normalized = normalize(value, '');
+  if (!normalized) return '';
+  try {
+    return new URL(normalized).hostname || '';
+  } catch {
+    return '';
+  }
+}
+
+function isLocalEndpoint(value = '') {
+  return isLocalHost(getUrlHostname(value));
 }
 
 async function isHealthy(baseUrl) {
@@ -65,29 +84,37 @@ async function pickEndpoint() {
     .filter(Boolean);
 
   let selected = '';
+  let healthy = null;
   for (const candidate of candidates) {
     if (candidate === selected) continue;
     // eslint-disable-next-line no-await-in-loop
     const ok = await isHealthy(candidate);
     if (ok) {
       selected = candidate;
+      healthy = true;
       break;
     }
   }
 
   if (!selected) {
     selected = saved || normalize(DEFAULT_CANDIDATES[0] || '', '');
+    healthy = selected ? false : null;
   }
 
   if (selected && typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, selected);
   }
 
-  return selected;
+  return {
+    url: selected,
+    healthy,
+  };
 }
 
 export async function initPocketBase() {
-  pocketBaseUrl = await pickEndpoint();
+  const result = await pickEndpoint();
+  pocketBaseUrl = result.url;
+  pocketBaseHealthy = result.healthy;
   if (!pocketBaseUrl) {
     pocketBase = null;
     return null;
@@ -113,10 +140,41 @@ export function getPocketBase() {
     }
     pocketBase = new PocketBase(fallback);
     pocketBaseUrl = pocketBase.baseUrl;
+    pocketBaseHealthy = null;
   }
   return pocketBase;
 }
 
 export function getPocketBaseUrl() {
   return pocketBaseUrl;
+}
+
+export function getPocketBaseConfigStatus() {
+  const configured = normalize(DEFAULT_CANDIDATES[0] || '', '');
+  const saved =
+    typeof window !== 'undefined'
+      ? normalize(localStorage.getItem(STORAGE_KEY) || '', '')
+      : '';
+  const runtimeIsLocal = isLocalHost(runtimeHost);
+  const selected = pocketBaseUrl || configured || saved || '';
+  const selectedIsLocal = isLocalEndpoint(selected);
+
+  let issue = '';
+  if (!runtimeIsLocal && !configured && !saved) {
+    issue = 'missing-public-endpoint';
+  } else if (!runtimeIsLocal && selected && selectedIsLocal) {
+    issue = 'public-site-pointing-to-local-pocketbase';
+  } else if (selected && pocketBaseHealthy === false) {
+    issue = 'configured-endpoint-unreachable';
+  }
+
+  return {
+    runtimeHost,
+    runtimeIsLocal,
+    configured,
+    saved,
+    selected,
+    healthy: pocketBaseHealthy,
+    issue,
+  };
 }

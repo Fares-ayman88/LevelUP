@@ -25,8 +25,10 @@ npm run dev
 2. Keep the root directory as the repository root.
 3. Add `GEMINI_API_KEY` for the built-in AI chat route.
 4. Add `VITE_PB_ENDPOINT` only if you have a public PocketBase server.
-5. Redeploy.
+5. Use a public `https://...` PocketBase URL for deployed sites. Do not point Vercel to `127.0.0.1`, `localhost`, or a private LAN IP.
+6. Redeploy.
 
 Firebase client config has a production fallback baked into the app, so the main auth flow can run without manual Vercel client env setup.
+The current repository also contains a temporary public PocketBase fallback URL for emergency testing only. Replace it with a stable hosted endpoint or Vercel env value before treating the deployment as production-ready.
 
 The included `vercel.json` tells Vercel to build the Vite app into `dist` and rewrite SPA routes to `index.html`.
