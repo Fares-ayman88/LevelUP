@@ -1,0 +1,98 @@
+{
+  "project_info": {
+    "project_number": "617436995759",
+    "project_id": "eduplatform1-6dab2",
+    "storage_bucket": "eduplatform1-6dab2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:617436995759:android:6848e9649a1caa6d25345a",
+        "android_client_info": {
+          "package_name": "com.example.eduplatform1"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "617436995759-4m0msq0cjrkhrllv4flci6ae4bjkqfrm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.eduplatform1",
+            "certificate_hash": "cddd2db04151f35b04fcb3052e4308a2aaa01ed4"
+          }
+        },
+        {
+          "client_id": "617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCICMf0CzlkDHISSktt0ZuDJVAf6sjXDNU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "617436995759-v5gamu9ctm09houogg5h9bng6qi2i7jr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.eduplatform1"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:617436995759:android:95c2ddbcfebdfdfa25345a",
+        "android_client_info": {
+          "package_name": "com.example.levelup"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "617436995759-bs8vu2f287upke57c2qtkr6mub7a9aol.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.levelup",
+            "certificate_hash": "cddd2db04151f35b04fcb3052e4308a2aaa01ed4"
+          }
+        },
+        {
+          "client_id": "617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCICMf0CzlkDHISSktt0ZuDJVAf6sjXDNU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "617436995759-v5gamu9ctm09houogg5h9bng6qi2i7jr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.eduplatform1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
