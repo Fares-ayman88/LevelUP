@@ -31,7 +31,14 @@ export default function Indox() {
       const reply = response.reply || response.text || response.message || '...';
       setMessages((prev) => [...prev, { role: 'assistant', text: reply }]);
     } catch (error) {
-      setMessages((prev) => [...prev, { role: 'assistant', text: 'Could not reach assistant.' }]);
+      const details = `${error?.message || error || ''}`.trim();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: details ? `Could not reach assistant. ${details}` : 'Could not reach assistant.',
+        },
+      ]);
     } finally {
       setSending(false);
     }
