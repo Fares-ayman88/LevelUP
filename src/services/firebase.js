@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const fallbackFirebaseConfig = {
   apiKey: 'AIzaSyBp7fcqBGt-ZN8_HDb6d7BF2f8W1eA6J6o',
@@ -32,14 +33,16 @@ export const isFirebaseConfigured = Object.values(firebaseConfig).every(
 let app = null;
 let auth = null;
 let db = null;
+let storage = null;
 
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   auth.useDeviceLanguage();
   db = getFirestore(app);
+  storage = getStorage(app);
 } else {
   console.warn('Firebase is not configured. Set VITE_FIREBASE_* env values.');
 }
 
-export { app, auth, db };
+export { app, auth, db, storage };

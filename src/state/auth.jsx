@@ -795,6 +795,31 @@ export async function updateAuthDisplayName(name) {
   }, 'Updating profile...');
 }
 
+export async function updateUserProfilePhoto(user, photoUrl) {
+  return withGlobalLoading(async () => {
+    if (!db) throw new Error('Firestore is not configured.');
+    const target = user || auth?.currentUser;
+    const uid = `${target?.uid || ''}`.trim();
+    const resolvedPhotoUrl = normalizePhotoUrl(photoUrl);
+    if (!uid) throw new Error('No authenticated user to update.');
+    if (!resolvedPhotoUrl) throw new Error('Missing profile photo URL.');
+
+    await setDoc(
+      doc(db, 'users', uid),
+      {
+        photoUrl: resolvedPhotoUrl,
+        photoURL: resolvedPhotoUrl,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    if (auth?.currentUser && auth.currentUser.uid === uid) {
+      await updateProfile(auth.currentUser, { photoURL: resolvedPhotoUrl });
+    }
+  }, 'Updating profile photo...');
+}
+
 export async function signInStaticAdmin(alias, password) {
   return withGlobalLoading(async () => {
     if (!auth || !db) throw new Error('Firebase auth is not configured.');
