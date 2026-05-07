@@ -215,8 +215,6 @@ export default function Home() {
     onClick: openNotifications,
   };
 
-  const headerActions = [];
-
   const actionHints = {
     add: 'Create and manage course content',
     history: 'Review recent payment activity',
@@ -440,40 +438,6 @@ export default function Home() {
           </div>
         </aside>
         <div className="screen home-main">
-          <section className="home-main__intro">
-            <div className="home-header">
-              <div>
-                <h2>{greeting}</h2>
-                <p className="home-subtitle">{subtitle}</p>
-              </div>
-              <div className="home-actions">
-                {headerActions.map((action) => (
-                  <button
-                    key={action.key}
-                    type="button"
-                    className="home-outline-btn"
-                    onClick={action.onClick}
-                    title={action.label}
-                    aria-label={action.label}
-                  >
-                    <span className="home-outline-btn__inner">
-                      <ActionIcon icon={action.icon} variant={action.variant} />
-                    </span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="home-notification"
-                  onClick={openNotifications}
-                  aria-label="Notifications"
-                >
-                  <img src="/assets/home/NOTIFICATIONS.svg" alt="Notifications" />
-                  {isAdmin ? <span className="home-notification__dot" /> : null}
-                </button>
-              </div>
-            </div>
-          </section>
-
           <section className="home-main__promo">
             <div className="promo-carousel">
               <div
@@ -510,28 +474,6 @@ export default function Home() {
                   />
                 ))}
               </div>
-            </div>
-          </section>
-
-          <section className="home-section">
-            <div className="section-header">
-              <h4>Categories</h4>
-              <button type="button" onClick={() => navigate('/all-category')}>
-                <span>SEE ALL</span>
-                <ArrowRightIcon />
-              </button>
-            </div>
-            <div className="category-row">
-              {categories.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={`category-link ${item === activeFilter ? 'active' : ''}`}
-                  onClick={() => setFilter(item)}
-                >
-                  {item}
-                </button>
-              ))}
             </div>
           </section>
 

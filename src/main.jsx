@@ -6,6 +6,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 import App from './App.jsx';
+import GlobalLoader from './components/GlobalLoader.jsx';
 import { AuthProvider } from './state/auth.jsx';
 import './styles.css';
 
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <HeroUIProvider>
         <BrowserRouter>
           <App />
+          <GlobalLoader />
           <ToastContainer
             position="top-center"
             autoClose={3200}

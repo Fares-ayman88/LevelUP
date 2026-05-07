@@ -1,0 +1,149 @@
+.global-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(244, 247, 255, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.global-loader__panel,
+.loading-card--pro {
+  width: min(360px, 100%);
+  border: 1px solid rgba(183, 201, 236, 0.82);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.96));
+  box-shadow: 0 28px 58px rgba(86, 111, 165, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px;
+  text-align: center;
+}
+
+.global-loader__mark,
+.loading-card__mark {
+  width: 78px;
+  height: 78px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.global-loader__ring,
+.loading-card__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 4px solid rgba(13, 101, 255, 0.14);
+  border-top-color: #0d65ff;
+  animation: appLoaderSpin 0.9s linear infinite;
+}
+
+.global-loader__ring::after,
+.loading-card__ring::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(13, 101, 255, 0.12);
+}
+
+.global-loader__core,
+.loading-card__core {
+  width: 48px;
+  height: 48px;
+  border-radius: 17px;
+  background: linear-gradient(180deg, #0d65ff, #1f78ff);
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  font-weight: 900;
+  box-shadow: 0 16px 28px rgba(13, 101, 255, 0.24);
+}
+
+.global-loader__copy,
+.loading-card__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.global-loader__copy strong,
+.loading-card__copy strong {
+  color: #1d2b57;
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.global-loader__copy span,
+.loading-card__copy span {
+  color: #7a87a7;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.global-loader__bar,
+.loading-card__bar {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(205, 218, 242, 0.76);
+}
+
+.global-loader__bar span,
+.loading-card__bar span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0d65ff, #28c7ff);
+  animation: appLoaderBar 1.05s ease-in-out infinite;
+}
+
+.loading-page--pro {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg, #f4f7ff);
+}
+
+@keyframes appLoaderSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes appLoaderBar {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-loader__ring,
+  .loading-card__ring,
+  .global-loader__bar span,
+  .loading-card__bar span {
+    animation-duration: 2s;
+  }
+}
+
+@media (max-width: 480px) {
+  .global-loader__panel,
+  .loading-card--pro {
+    border-radius: 24px;
+    padding: 24px;
+  }
+}

@@ -19,6 +19,7 @@ import MentorChatThread from './pages/MentorChatThread.jsx';
 import SupportChats from './pages/SupportChats.jsx';
 import SupportChatThread from './pages/SupportChatThread.jsx';
 import Call from './pages/Call.jsx';
+import Cart from './pages/Cart.jsx';
 import Transactions from './pages/Transactions.jsx';
 import Profile from './pages/Profile.jsx';
 import EditProfile from './pages/EditProfile.jsx';
@@ -95,6 +96,7 @@ export const routeConfig = [
   { path: '/support-chats', title: 'Support Chats', component: SupportChats },
   { path: '/support-chat-thread', title: 'Support Chat Thread', component: SupportChatThread },
   { path: '/call', title: 'Call', component: Call },
+  { path: '/cart', title: 'Cart', component: Cart },
   { path: '/transactions', title: 'Transactions', component: Transactions },
   { path: '/manual-transfer', title: 'Manual Transfer', component: ManualTransfer },
   { path: '/payment-request', title: 'Payment Request', component: PaymentRequest },

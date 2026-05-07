@@ -1,6 +1,7 @@
 import { collection, getDocs } from 'firebase/firestore';
 
 import { auth, db } from './firebase.js';
+import { withGlobalLoading } from './globalLoading.js';
 import { getPocketBase, hasPocketBaseEndpoint } from './pocketbase.js';
 import { seedCourses } from '../data/seedCourses.js';
 import { seedMentors } from '../data/seedMentors.js';
@@ -526,46 +527,50 @@ export function buildCategories(courses) {
 }
 
 export async function fetchCourses() {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    return applySavedMarks(orderFeaturedCourses(seedCourses.slice()));
-  }
-  try {
-    const records = await pb.collection(COURSE_COLLECTION).getFullList({ sort: '-created' });
-    const mapped = records.map((record) => mapCourse(pb, record));
-    const source = mapped.length ? mapped : seedCourses.slice();
-    const ordered = orderFeaturedCourses(source);
-    return applySavedMarks(ordered);
-  } catch {
-    return applySavedMarks(orderFeaturedCourses(seedCourses.slice()));
-  }
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      return applySavedMarks(orderFeaturedCourses(seedCourses.slice()));
+    }
+    try {
+      const records = await pb.collection(COURSE_COLLECTION).getFullList({ sort: '-created' });
+      const mapped = records.map((record) => mapCourse(pb, record));
+      const source = mapped.length ? mapped : seedCourses.slice();
+      const ordered = orderFeaturedCourses(source);
+      return applySavedMarks(ordered);
+    } catch {
+      return applySavedMarks(orderFeaturedCourses(seedCourses.slice()));
+    }
+  }, 'Loading courses...');
 }
 
 export async function fetchMentors() {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    const firestoreMentors = await fetchFirestoreMentors();
-    const merged = mergeFirestoreMentors(seedMentors.slice(), firestoreMentors);
-    return orderFeaturedMentors(dedupeMentorsByName(merged));
-  }
-  try {
-    const [records, firestoreMentors, overlays] = await Promise.all([
-      pb.collection(MENTOR_COLLECTION).getFullList({ sort: '-created' }),
-      fetchFirestoreMentors(),
-      fetchProfileImageOverlays(pb),
-    ]);
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      const firestoreMentors = await fetchFirestoreMentors();
+      const merged = mergeFirestoreMentors(seedMentors.slice(), firestoreMentors);
+      return orderFeaturedMentors(dedupeMentorsByName(merged));
+    }
+    try {
+      const [records, firestoreMentors, overlays] = await Promise.all([
+        pb.collection(MENTOR_COLLECTION).getFullList({ sort: '-created' }),
+        fetchFirestoreMentors(),
+        fetchProfileImageOverlays(pb),
+      ]);
 
-    const mapped = records
-      .map((record) => mapMentor(pb, record))
-      .filter((mentor) => mentor.category.trim() !== '__profile__');
-    const withFirestore = mergeFirestoreMentors(mapped, firestoreMentors);
-    const withOverlays = applyProfileImageOverlays(withFirestore, overlays);
-    const deduped = dedupeMentorsByName(withOverlays);
-    const source = deduped.length ? deduped : seedMentors.slice();
-    return orderFeaturedMentors(source);
-  } catch {
-    return orderFeaturedMentors(seedMentors.slice());
-  }
+      const mapped = records
+        .map((record) => mapMentor(pb, record))
+        .filter((mentor) => mentor.category.trim() !== '__profile__');
+      const withFirestore = mergeFirestoreMentors(mapped, firestoreMentors);
+      const withOverlays = applyProfileImageOverlays(withFirestore, overlays);
+      const deduped = dedupeMentorsByName(withOverlays);
+      const source = deduped.length ? deduped : seedMentors.slice();
+      return orderFeaturedMentors(source);
+    } catch {
+      return orderFeaturedMentors(seedMentors.slice());
+    }
+  }, 'Loading mentors...');
 }
 
 export function invalidateCoursesQuery() {
@@ -646,29 +651,31 @@ export async function createCourse(
   course,
   { coverImageFile, lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  const payload = sanitizeCoursePayload(course);
-  if (coverImageFile) payload.coverImage = coverImageFile;
-  let created = await pb.collection(COURSE_COLLECTION).create(payload);
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    const payload = sanitizeCoursePayload(course);
+    if (coverImageFile) payload.coverImage = coverImageFile;
+    let created = await pb.collection(COURSE_COLLECTION).create(payload);
 
-  if (Array.isArray(lessonVideoUploads) && lessonVideoUploads.length > 0) {
-    const updatedSections = await uploadLessonVideos(pb, {
-      record: created,
-      sections: payload.sections,
-      uploads: lessonVideoUploads,
-      onProgress: onLessonUploadProgress,
-    });
-    created = await pb.collection(COURSE_COLLECTION).update(created.id, {
-      sections: updatedSections,
-    });
-  }
+    if (Array.isArray(lessonVideoUploads) && lessonVideoUploads.length > 0) {
+      const updatedSections = await uploadLessonVideos(pb, {
+        record: created,
+        sections: payload.sections,
+        uploads: lessonVideoUploads,
+        onProgress: onLessonUploadProgress,
+      });
+      created = await pb.collection(COURSE_COLLECTION).update(created.id, {
+        sections: updatedSections,
+      });
+    }
 
-  const mapped = mapCourse(pb, created);
-  invalidateCoursesQuery();
-  return mapped;
+    const mapped = mapCourse(pb, created);
+    invalidateCoursesQuery();
+    return mapped;
+  }, 'Saving course...');
 }
 
 export async function updateCourse(
@@ -676,100 +683,114 @@ export async function updateCourse(
   course,
   { coverImageFile, previousCoverUrl = '', lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  const payload = sanitizeCoursePayload(course);
-  if (coverImageFile) payload.coverImage = coverImageFile;
-  if (!coverImageFile && !payload.coverImageUrl && `${previousCoverUrl || ''}`.trim()) {
-    payload.coverImage = null;
-  }
-  let updated = await pb.collection(COURSE_COLLECTION).update(courseId, payload);
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    const payload = sanitizeCoursePayload(course);
+    if (coverImageFile) payload.coverImage = coverImageFile;
+    if (!coverImageFile && !payload.coverImageUrl && `${previousCoverUrl || ''}`.trim()) {
+      payload.coverImage = null;
+    }
+    let updated = await pb.collection(COURSE_COLLECTION).update(courseId, payload);
 
-  if (Array.isArray(lessonVideoUploads) && lessonVideoUploads.length > 0) {
-    const updatedSections = await uploadLessonVideos(pb, {
-      record: updated,
-      sections: payload.sections,
-      uploads: lessonVideoUploads,
-      onProgress: onLessonUploadProgress,
-    });
-    updated = await pb.collection(COURSE_COLLECTION).update(courseId, {
-      sections: updatedSections,
-    });
-  }
+    if (Array.isArray(lessonVideoUploads) && lessonVideoUploads.length > 0) {
+      const updatedSections = await uploadLessonVideos(pb, {
+        record: updated,
+        sections: payload.sections,
+        uploads: lessonVideoUploads,
+        onProgress: onLessonUploadProgress,
+      });
+      updated = await pb.collection(COURSE_COLLECTION).update(courseId, {
+        sections: updatedSections,
+      });
+    }
 
-  const mapped = mapCourse(pb, updated);
-  invalidateCoursesQuery();
-  return mapped;
+    const mapped = mapCourse(pb, updated);
+    invalidateCoursesQuery();
+    return mapped;
+  }, 'Updating course...');
 }
 
 export async function deleteCourse(courseId) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  await pb.collection(COURSE_COLLECTION).delete(courseId);
-  invalidateCoursesQuery();
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    await pb.collection(COURSE_COLLECTION).delete(courseId);
+    invalidateCoursesQuery();
+  }, 'Deleting course...');
 }
 
 export async function createMentor(mentor, { imageFile } = {}) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  const payload = sanitizeMentorPayload(mentor);
-  if (imageFile) payload.image = imageFile;
-  const created = await pb.collection(MENTOR_COLLECTION).create(payload);
-  const mapped = mapMentor(pb, created);
-  invalidateMentorsQuery();
-  return mapped;
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    const payload = sanitizeMentorPayload(mentor);
+    if (imageFile) payload.image = imageFile;
+    const created = await pb.collection(MENTOR_COLLECTION).create(payload);
+    const mapped = mapMentor(pb, created);
+    invalidateMentorsQuery();
+    return mapped;
+  }, 'Saving mentor...');
 }
 
 export async function updateMentor(mentorId, mentor, { imageFile } = {}) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  const payload = sanitizeMentorPayload(mentor);
-  if (imageFile) payload.image = imageFile;
-  const updated = await pb.collection(MENTOR_COLLECTION).update(mentorId, payload);
-  const mapped = mapMentor(pb, updated);
-  invalidateMentorsQuery();
-  return mapped;
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    const payload = sanitizeMentorPayload(mentor);
+    if (imageFile) payload.image = imageFile;
+    const updated = await pb.collection(MENTOR_COLLECTION).update(mentorId, payload);
+    const mapped = mapMentor(pb, updated);
+    invalidateMentorsQuery();
+    return mapped;
+  }, 'Updating mentor...');
 }
 
 export async function deleteMentor(mentorId) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  await pb.collection(MENTOR_COLLECTION).delete(mentorId);
-  invalidateMentorsQuery();
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    await pb.collection(MENTOR_COLLECTION).delete(mentorId);
+    invalidateMentorsQuery();
+  }, 'Deleting mentor...');
 }
 
 export async function saveCourseFeaturedOrder(orderedCourses = []) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  const tasks = orderedCourses.map((course, index) =>
-    pb.collection(COURSE_COLLECTION).update(course.id, { featuredRank: index + 1 })
-  );
-  await Promise.all(tasks);
-  invalidateCoursesQuery();
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    const tasks = orderedCourses.map((course, index) =>
+      pb.collection(COURSE_COLLECTION).update(course.id, { featuredRank: index + 1 })
+    );
+    await Promise.all(tasks);
+    invalidateCoursesQuery();
+  }, 'Saving course order...');
 }
 
 export async function saveMentorFeaturedOrder(orderedMentors = []) {
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  if (!pb) {
-    throw new Error('PocketBase is not configured for production writes.');
-  }
-  const tasks = orderedMentors.map((mentor, index) =>
-    pb.collection(MENTOR_COLLECTION).update(mentor.id, { featuredRank: index + 1 })
-  );
-  await Promise.all(tasks);
-  invalidateMentorsQuery();
+  return withGlobalLoading(async () => {
+    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
+    if (!pb) {
+      throw new Error('PocketBase is not configured for production writes.');
+    }
+    const tasks = orderedMentors.map((mentor, index) =>
+      pb.collection(MENTOR_COLLECTION).update(mentor.id, { featuredRank: index + 1 })
+    );
+    await Promise.all(tasks);
+    invalidateMentorsQuery();
+  }, 'Saving mentor order...');
 }
 
 export function isCourseSaved(courseId) {

@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import MainBottomNav from '../components/MainBottomNav.jsx';
 import { fetchCourses, subscribeCourses } from '../services/homeData.js';
 
 const StarIcon = ({ className }) => (
@@ -98,6 +99,7 @@ export default function SavedCourses() {
           ))}
         </div>
       </div>
+      <MainBottomNav currentIndex={-1} />
     </div>
   );
 }

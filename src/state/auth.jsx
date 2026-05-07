@@ -30,6 +30,7 @@ import {
 } from 'firebase/firestore';
 
 import { auth, db, isFirebaseConfigured } from '../services/firebase.js';
+import { withGlobalLoading } from '../services/globalLoading.js';
 import {
   requestEmailOtpCode,
   verifyEmailOtpCode,
@@ -574,168 +575,190 @@ export function useAuth() {
 }
 
 export async function signInWithEmail(email, password) {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  const result = await signInWithEmailAndPassword(auth, email, password);
-  await linkPendingGoogleCredentialIfNeeded(result?.user);
-  return result;
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    await linkPendingGoogleCredentialIfNeeded(result?.user);
+    return result;
+  }, 'Signing in...');
 }
 
 export async function signUpWithEmail(email, password) {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  return createUserWithEmailAndPassword(auth, email, password);
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    return createUserWithEmailAndPassword(auth, email, password);
+  }, 'Creating account...');
 }
 
 export async function signInWithGoogle({ loginHint = '' } = {}) {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  const provider = createGoogleProvider({ loginHint });
-  const preferRedirect = shouldPreferGoogleRedirect();
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    const provider = createGoogleProvider({ loginHint });
+    const preferRedirect = shouldPreferGoogleRedirect();
 
-  try {
-    if (preferRedirect) {
-      await signInWithRedirect(auth, provider);
-      return { redirecting: true };
+    try {
+      if (preferRedirect) {
+        await signInWithRedirect(auth, provider);
+        return { redirecting: true };
+      }
+
+      const result = await signInWithPopup(auth, provider);
+      return syncGoogleUserProfile(result);
+    } catch (error) {
+      const code = error?.code || '';
+
+      if (
+        !preferRedirect &&
+        (code === 'auth/popup-blocked' || code === 'popup-blocked')
+      ) {
+        await signInWithRedirect(auth, provider);
+        return { redirecting: true };
+      }
+
+      throw await enrichGoogleAuthError(error);
     }
-
-    const result = await signInWithPopup(auth, provider);
-    return syncGoogleUserProfile(result);
-  } catch (error) {
-    const code = error?.code || '';
-
-    if (
-      !preferRedirect &&
-      (code === 'auth/popup-blocked' || code === 'popup-blocked')
-    ) {
-      await signInWithRedirect(auth, provider);
-      return { redirecting: true };
-    }
-
-    throw await enrichGoogleAuthError(error);
-  }
+  }, 'Connecting account...');
 }
 
 export async function completeGoogleRedirectSignIn() {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  try {
-    const result = await getRedirectResult(auth);
-    if (!result) return null;
-    return await syncGoogleUserProfile(result);
-  } catch (error) {
-    throw await enrichGoogleAuthError(error);
-  }
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    try {
+      const result = await getRedirectResult(auth);
+      if (!result) return null;
+      return await syncGoogleUserProfile(result);
+    } catch (error) {
+      throw await enrichGoogleAuthError(error);
+    }
+  }, 'Checking sign in...');
 }
 
 export async function sendPasswordReset(email) {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  const normalizedEmail = email.toString().trim().toLowerCase();
-  const actionCodeSettings = buildPasswordResetActionSettings();
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    const normalizedEmail = email.toString().trim().toLowerCase();
+    const actionCodeSettings = buildPasswordResetActionSettings();
 
-  try {
-    await dispatchPasswordResetEmail(normalizedEmail, actionCodeSettings);
-    return {
-      ok: true,
-      email: normalizedEmail,
-      hidden: false,
-    };
-  } catch (error) {
-    if (actionCodeSettings && shouldRetryPasswordResetWithoutContinueUrl(error)) {
-      try {
-        await dispatchPasswordResetEmail(normalizedEmail);
-        return {
-          ok: true,
-          email: normalizedEmail,
-          hidden: false,
-          usedFallback: true,
-        };
-      } catch (fallbackError) {
-        if (isPasswordResetHiddenError(fallbackError)) {
-          return {
-            ok: true,
-            email: normalizedEmail,
-            hidden: true,
-          };
-        }
-        throw fallbackError;
-      }
-    }
-
-    if (isPasswordResetHiddenError(error)) {
+    try {
+      await dispatchPasswordResetEmail(normalizedEmail, actionCodeSettings);
       return {
         ok: true,
         email: normalizedEmail,
-        hidden: true,
+        hidden: false,
       };
-    }
+    } catch (error) {
+      if (actionCodeSettings && shouldRetryPasswordResetWithoutContinueUrl(error)) {
+        try {
+          await dispatchPasswordResetEmail(normalizedEmail);
+          return {
+            ok: true,
+            email: normalizedEmail,
+            hidden: false,
+            usedFallback: true,
+          };
+        } catch (fallbackError) {
+          if (isPasswordResetHiddenError(fallbackError)) {
+            return {
+              ok: true,
+              email: normalizedEmail,
+              hidden: true,
+            };
+          }
+          throw fallbackError;
+        }
+      }
 
-    throw error;
-  }
+      if (isPasswordResetHiddenError(error)) {
+        return {
+          ok: true,
+          email: normalizedEmail,
+          hidden: true,
+        };
+      }
+
+      throw error;
+    }
+  }, 'Sending reset link...');
 }
 
 export async function validatePasswordResetCode(code) {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  return firebaseVerifyPasswordResetCode(auth, code);
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    return firebaseVerifyPasswordResetCode(auth, code);
+  }, 'Checking reset link...');
 }
 
 export async function confirmPasswordResetWithCode(code, newPassword) {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  return firebaseConfirmPasswordReset(auth, code, newPassword);
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    return firebaseConfirmPasswordReset(auth, code, newPassword);
+  }, 'Updating password...');
 }
 
 export async function signOut() {
-  if (!auth) throw new Error('Firebase auth is not configured.');
-  clearPendingGoogleLink();
-  return firebaseSignOut(auth);
+  return withGlobalLoading(async () => {
+    if (!auth) throw new Error('Firebase auth is not configured.');
+    clearPendingGoogleLink();
+    return firebaseSignOut(auth);
+  }, 'Signing out...');
 }
 
 export async function markEmailOtpVerified(user) {
-  if (!db) throw new Error('Firestore is not configured.');
-  const target = user || auth?.currentUser;
-  if (!target?.uid) throw new Error('No authenticated user to verify.');
+  return withGlobalLoading(async () => {
+    if (!db) throw new Error('Firestore is not configured.');
+    const target = user || auth?.currentUser;
+    if (!target?.uid) throw new Error('No authenticated user to verify.');
 
-  await setDoc(
-    doc(db, 'users', target.uid),
-    {
-      email: (target.email || '').toString().trim(),
-      [EMAIL_OTP_VERIFIED_FIELD]: true,
-      [EMAIL_OTP_VERIFIED_AT_FIELD]: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+    await setDoc(
+      doc(db, 'users', target.uid),
+      {
+        email: (target.email || '').toString().trim(),
+        [EMAIL_OTP_VERIFIED_FIELD]: true,
+        [EMAIL_OTP_VERIFIED_AT_FIELD]: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
 
-  return { ok: true };
+    return { ok: true };
+  }, 'Verifying email...');
 }
 
 export async function requestEmailVerificationCodeForUser(user) {
-  const target = user || auth?.currentUser;
-  const normalizedEmail = (target?.email || '').toString().trim().toLowerCase();
-  if (!target || !normalizedEmail) {
-    throw new Error('No authenticated user to verify.');
-  }
+  return withGlobalLoading(async () => {
+    const target = user || auth?.currentUser;
+    const normalizedEmail = (target?.email || '').toString().trim().toLowerCase();
+    if (!target || !normalizedEmail) {
+      throw new Error('No authenticated user to verify.');
+    }
 
-  const result = await requestEmailOtpCode(normalizedEmail);
-  return {
-    ok: true,
-    email: result.email,
-    otpId: result.otpId,
-    status: 'pocketbase_otp_sent',
-  };
+    const result = await requestEmailOtpCode(normalizedEmail);
+    return {
+      ok: true,
+      email: result.email,
+      otpId: result.otpId,
+      status: 'pocketbase_otp_sent',
+    };
+  }, 'Sending verification code...');
 }
 
 export async function verifyEmailVerificationCodeForUser(
   { user, otpId, code } = {}
 ) {
-  const target = user || auth?.currentUser;
-  if (!target) {
-    throw new Error('No authenticated user to verify.');
-  }
+  return withGlobalLoading(async () => {
+    const target = user || auth?.currentUser;
+    if (!target) {
+      throw new Error('No authenticated user to verify.');
+    }
 
-  await verifyEmailOtpCode({ otpId, code });
-  await markEmailOtpVerified(target);
+    await verifyEmailOtpCode({ otpId, code });
+    await markEmailOtpVerified(target);
 
-  return {
-    ok: true,
-    email: (target.email || '').toString().trim().toLowerCase(),
-  };
+    return {
+      ok: true,
+      email: (target.email || '').toString().trim().toLowerCase(),
+    };
+  }, 'Verifying code...');
 }
 
 export async function sendVerificationEmailForUser(user) {
@@ -743,91 +766,99 @@ export async function sendVerificationEmailForUser(user) {
 }
 
 export async function fetchUserProfile(uid) {
-  if (!db) throw new Error('Firestore is not configured.');
-  const snapshot = await getDoc(doc(db, 'users', uid));
-  if (!snapshot.exists()) return null;
-  return buildProfile({ uid, data: snapshot.data() });
+  return withGlobalLoading(async () => {
+    if (!db) throw new Error('Firestore is not configured.');
+    const snapshot = await getDoc(doc(db, 'users', uid));
+    if (!snapshot.exists()) return null;
+    return buildProfile({ uid, data: snapshot.data() });
+  }, 'Loading profile...');
 }
 
 export async function saveUserProfile(uid, data) {
-  if (!db) throw new Error('Firestore is not configured.');
-  const payload = {
-    ...data,
-    updatedAt: serverTimestamp(),
-  };
-  if (!payload.createdAt) {
-    payload.createdAt = serverTimestamp();
-  }
-  await setDoc(doc(db, 'users', uid), payload, { merge: true });
+  return withGlobalLoading(async () => {
+    if (!db) throw new Error('Firestore is not configured.');
+    const payload = {
+      ...data,
+      updatedAt: serverTimestamp(),
+    };
+    if (!payload.createdAt) {
+      payload.createdAt = serverTimestamp();
+    }
+    await setDoc(doc(db, 'users', uid), payload, { merge: true });
+  }, 'Saving profile...');
 }
 
 export async function updateAuthDisplayName(name) {
-  if (!auth || !auth.currentUser) return;
-  await updateProfile(auth.currentUser, { displayName: name });
+  return withGlobalLoading(async () => {
+    if (!auth || !auth.currentUser) return;
+    await updateProfile(auth.currentUser, { displayName: name });
+  }, 'Updating profile...');
 }
 
 export async function signInStaticAdmin(alias, password) {
-  if (!auth || !db) throw new Error('Firebase auth is not configured.');
-  const key = resolveStaticAdminAlias(alias);
-  if (!key) {
-    throw new Error('Invalid admin credentials.');
-  }
-  const authPassword = staticAdminAuthPasswordForAlias(key);
-  if (!authPassword || !isStaticAdminPasswordValid(key, password)) {
-    throw new Error('Invalid admin credentials.');
-  }
+  return withGlobalLoading(async () => {
+    if (!auth || !db) throw new Error('Firebase auth is not configured.');
+    const key = resolveStaticAdminAlias(alias);
+    if (!key) {
+      throw new Error('Invalid admin credentials.');
+    }
+    const authPassword = staticAdminAuthPasswordForAlias(key);
+    if (!authPassword || !isStaticAdminPasswordValid(key, password)) {
+      throw new Error('Invalid admin credentials.');
+    }
 
-  const emails = staticAdminEmailsForAlias(key);
-  let lastError = null;
+    const emails = staticAdminEmailsForAlias(key);
+    let lastError = null;
 
-  for (const email of emails) {
-    try {
-      await signInWithEmailAndPassword(auth, email, authPassword);
-      lastError = null;
-      break;
-    } catch (error) {
-      lastError = error;
-      const code = error?.code || '';
-      const shouldCreate = code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'user-not-found' || code === 'invalid-credential';
-      if (shouldCreate) {
-        try {
-          await createUserWithEmailAndPassword(auth, email, authPassword);
-          lastError = null;
-          break;
-        } catch (createError) {
-          const createCode = createError?.code || '';
-          if (createCode === 'auth/email-already-in-use' || createCode === 'auth/invalid-email') {
-            lastError = error;
-            continue;
+    for (const email of emails) {
+      try {
+        await signInWithEmailAndPassword(auth, email, authPassword);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        const code = error?.code || '';
+        const shouldCreate = code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'user-not-found' || code === 'invalid-credential';
+        if (shouldCreate) {
+          try {
+            await createUserWithEmailAndPassword(auth, email, authPassword);
+            lastError = null;
+            break;
+          } catch (createError) {
+            const createCode = createError?.code || '';
+            if (createCode === 'auth/email-already-in-use' || createCode === 'auth/invalid-email') {
+              lastError = error;
+              continue;
+            }
+            lastError = createError;
+            throw createError;
           }
-          lastError = createError;
-          throw createError;
+        } else if (code === 'auth/wrong-password' || code === 'auth/invalid-email' || code === 'wrong-password' || code === 'invalid-email') {
+          continue;
+        } else {
+          throw error;
         }
-      } else if (code === 'auth/wrong-password' || code === 'auth/invalid-email' || code === 'wrong-password' || code === 'invalid-email') {
-        continue;
-      } else {
-        throw error;
       }
     }
-  }
 
-  if (lastError) {
-    throw lastError;
-  }
+    if (lastError) {
+      throw lastError;
+    }
 
-  const user = auth.currentUser;
-  if (user && isStaticAdminEmail(user.email || '')) {
-    await setDoc(
-      doc(db, 'users', user.uid),
-      {
-        role: 'admin',
-        approved: true,
-        status: 'active',
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }
+    const user = auth.currentUser;
+    if (user && isStaticAdminEmail(user.email || '')) {
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          role: 'admin',
+          approved: true,
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
 
-  return user;
+    return user;
+  }, 'Signing in...');
 }

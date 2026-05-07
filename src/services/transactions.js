@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 
 import { auth, db } from './firebase.js';
+import { showGlobalLoading, withGlobalLoading } from './globalLoading.js';
 
 const STORAGE_KEY = 'levelup_transactions_v1';
 const RECEIPT_SERIAL_KEY = 'levelup_receipt_serial_v1';
@@ -206,65 +207,69 @@ export function saveStoredTransactions(list) {
 }
 
 export async function addTransaction(payload) {
-  ensureLocalLoaded();
-  const user = auth?.currentUser || null;
-  const item = {
-    id: `tx_${Date.now()}`,
-    ...buildPayload(payload, user),
-  };
+  return withGlobalLoading(async () => {
+    ensureLocalLoaded();
+    const user = auth?.currentUser || null;
+    const item = {
+      id: `tx_${Date.now()}`,
+      ...buildPayload(payload, user),
+    };
 
-  if (!db || !user?.uid) {
-    upsertCache(item);
-    return item;
-  }
+    if (!db || !user?.uid) {
+      upsertCache(item);
+      return item;
+    }
 
-  try {
-    const created = await addDoc(collection(db, 'transactions'), {
-      ...item,
-      status: STATUS.waiting,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    const saved = { ...item, id: created.id };
-    upsertCache(saved);
-    return saved;
-  } catch {
-    upsertCache(item);
-    return item;
-  }
+    try {
+      const created = await addDoc(collection(db, 'transactions'), {
+        ...item,
+        status: STATUS.waiting,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      const saved = { ...item, id: created.id };
+      upsertCache(saved);
+      return saved;
+    } catch {
+      upsertCache(item);
+      return item;
+    }
+  }, 'Saving transaction...');
 }
 
 export async function updateTransactionStatus(id, status) {
-  ensureLocalLoaded();
-  const transactionId = `${id || ''}`.trim();
-  if (!transactionId) return null;
-  const normalizedStatus = normalizeStatus(status);
-  const updatedAt = new Date().toISOString();
+  return withGlobalLoading(async () => {
+    ensureLocalLoaded();
+    const transactionId = `${id || ''}`.trim();
+    if (!transactionId) return null;
+    const normalizedStatus = normalizeStatus(status);
+    const updatedAt = new Date().toISOString();
 
-  let updated = null;
-  const next = cachedTransactions.map((item) => {
-    if (item.id !== transactionId) return item;
-    updated = { ...item, status: normalizedStatus, updatedAt };
+    let updated = null;
+    const next = cachedTransactions.map((item) => {
+      if (item.id !== transactionId) return item;
+      updated = { ...item, status: normalizedStatus, updatedAt };
+      return updated;
+    });
+
+    if (!updated) return null;
+
+    replaceCache(next);
+
+    if (db) {
+      try {
+        await setDoc(
+          doc(db, 'transactions', transactionId),
+          {
+            status: normalizedStatus,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch {}
+    }
     return updated;
-  });
-
-  if (!updated) return null;
-
-  replaceCache(next);
-
-  if (db) {
-    try {
-      await setDoc(
-        doc(db, 'transactions', transactionId),
-        {
-          status: normalizedStatus,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } catch {}
-  }
-  return updated;
+  }, 'Updating transaction...');
 }
 
 export function getAllTransactions(seed = []) {
@@ -285,11 +290,19 @@ export function subscribeTransactions(
   onError
 ) {
   ensureLocalLoaded();
+  const closeLoading = showGlobalLoading('Loading transactions...');
+  let initialLoadSettled = false;
+  const settleInitialLoad = () => {
+    if (initialLoadSettled) return;
+    initialLoadSettled = true;
+    closeLoading();
+  };
 
   const emitMerged = (remoteItems = []) => {
     const merged = sortNewest(mergeById(remoteItems, cachedTransactions));
     replaceCache(merged);
     onData(merged);
+    settleInitialLoad();
   };
 
   if (!db || !auth?.currentUser) {
@@ -309,17 +322,23 @@ export function subscribeTransactions(
     q = query(collection(db, 'transactions'), where('userId', '==', resolvedUserId));
   }
 
-  return onSnapshot(
+  const unsubscribe = onSnapshot(
     q,
     (snapshot) => {
       const remoteItems = snapshot.docs.map((docItem) => mapFirestoreDoc(docItem));
       emitMerged(remoteItems);
     },
     (error) => {
+      settleInitialLoad();
       if (onError) onError(error);
       emitMerged(getAllTransactions());
     }
   );
+
+  return () => {
+    settleInitialLoad();
+    unsubscribe();
+  };
 }
 
 export function subscribeUserTransactions(userId, onData, onError) {
@@ -333,4 +352,3 @@ export function subscribeAdminTransactions(onData, onError) {
 export function subscribeMentorTransactions(mentorId, onData, onError) {
   return subscribeTransactions({ role: 'instructor', mentorId }, onData, onError);
 }
-
