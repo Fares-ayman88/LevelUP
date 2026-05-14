@@ -1,7 +1,8 @@
 .app-footer {
-  background: #2b2d43;
+  background: linear-gradient(135deg, #1e1f2e 0%, #2b2d43 50%, #252736 100%);
   color: #fff;
   padding: 0 0 118px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .app-footer__teach,
@@ -17,7 +18,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 28px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0;
+  transition: background 0.3s ease;
 }
 
 .app-footer__teach-copy {
@@ -50,34 +54,66 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.88);
-  border-radius: 8px;
+  padding: 0 28px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 10px;
   color: #fff;
   font-size: 0.95rem;
   font-weight: 800;
   line-height: 1.2;
-  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  letter-spacing: 0.5px;
+  transition: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-footer__teach-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.6s ease;
+}
+
+.app-footer__teach-button:hover::before {
+  left: 100%;
 }
 
 .app-footer__teach-button:hover,
 .app-footer__teach-button:focus-visible {
-  background: #fff;
+  background: linear-gradient(135deg, #fff, rgba(255, 255, 255, 0.95));
   border-color: #fff;
   color: #2b2d43;
   outline: none;
+  box-shadow: 0 8px 32px rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.app-footer__teach-button:active {
+  transform: translateY(0px);
 }
 
 .app-footer__directory {
-  padding: 54px 0 28px;
+  padding: 64px 0 40px;
+  background: rgba(255, 255, 255, 0.01);
 }
 
 .app-footer__directory > h2 {
-  margin-bottom: 46px;
+  margin-bottom: 48px;
   text-align: right;
-  font-size: clamp(1.05rem, 1.2vw, 1.34rem);
+  font-size: clamp(1.08rem, 1.3vw, 1.42rem);
   line-height: 1.35;
+  background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.85) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .app-footer__links-grid {
@@ -91,31 +127,71 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 13px;
+  gap: 16px;
   text-align: right;
+  transition: transform 0.3s ease;
+}
+
+.app-footer__section:hover {
+  transform: translateY(-4px);
 }
 
 .app-footer__section h3 {
   margin-bottom: 10px;
-  font-size: clamp(0.96rem, 1vw, 1.15rem);
+  font-size: clamp(0.98rem, 1.05vw, 1.18rem);
   line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #fff;
+  position: relative;
+  padding-bottom: 8px;
+}
+
+.app-footer__section h3::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.8));
+  transition: width 0.3s ease;
+}
+
+.app-footer__section:hover h3::after {
+  width: 100%;
 }
 
 .app-footer__section a {
-  color: #fff;
-  font-size: clamp(0.88rem, 0.9vw, 1rem);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: clamp(0.88rem, 0.95vw, 1.02rem);
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.6;
   text-decoration: none;
-  transition: text-decoration-color 0.16s ease, opacity 0.16s ease;
+  transition: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  padding-right: 8px;
+}
+
+.app-footer__section a::before {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: 0;
+  width: 0;
+  height: 1.5px;
+  background: rgba(255, 255, 255, 0.9);
+  transition: width 0.3s ease;
 }
 
 .app-footer__section a:hover,
 .app-footer__section a:focus-visible {
-  opacity: 0.86;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: #fff;
   outline: none;
+}
+
+.app-footer__section a:hover::before {
+  width: calc(100% + 8px);
 }
 
 .app-footer__bottom {
@@ -123,26 +199,63 @@
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 22px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 0.86rem;
+  padding: 28px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.88rem;
   font-weight: 600;
+  letter-spacing: 0.3px;
+  transition: all 0.3s ease;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.02));
 }
 
 .app-footer__brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: #fff;
-  font-size: 1rem;
+  font-size: 1.08rem;
   font-weight: 800;
+  text-decoration: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 6px 12px;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-footer__brand::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  transition: left 0.3s ease;
+  z-index: -1;
+}
+
+.app-footer__brand:hover::before {
+  left: 0;
+}
+
+.app-footer__brand:hover,
+.app-footer__brand:focus-visible {
+  color: #fff;
+  outline: none;
+  transform: scale(1.05);
 }
 
 .app-footer__brand img {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
+  transition: transform 0.3s ease;
+}
+
+.app-footer__brand:hover img {
+  transform: scale(1.1) rotate(-5deg);
 }
 
 @media (max-width: 1100px) {
@@ -153,21 +266,22 @@
   }
 
   .app-footer__links-grid {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
-    gap: 44px 42px;
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+    gap: 48px 36px;
   }
 }
 
 @media (max-width: 820px) {
   .app-footer {
-    padding-bottom: 114px;
+    padding-bottom: 100px;
   }
 
   .app-footer__teach {
     min-height: auto;
-    padding: 28px 0;
+    padding: 32px 0;
     align-items: flex-start;
     flex-direction: column-reverse;
+    background: rgba(255, 255, 255, 0.03);
   }
 
   .app-footer__teach-copy,
@@ -180,16 +294,27 @@
     align-items: flex-start;
   }
 
+  .app-footer__section h3::after {
+    right: auto;
+    left: 0;
+  }
+
   .app-footer__directory {
-    padding-top: 40px;
+    padding-top: 44px;
   }
 
   .app-footer__directory > h2 {
-    margin-bottom: 34px;
+    margin-bottom: 36px;
   }
 
   .app-footer__links-grid {
-    grid-template-columns: repeat(2, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+    gap: 36px 24px;
+  }
+
+  .app-footer__teach-button {
+    width: 100%;
+    justify-content: center;
   }
 }
 
@@ -198,6 +323,33 @@
   .app-footer__directory,
   .app-footer__bottom {
     width: min(100% - 32px, 1180px);
+  }
+
+  .app-footer__directory > h2 {
+    margin-bottom: 28px;
+    font-size: 1.1rem;
+  }
+
+  .app-footer__links-grid {
+    grid-template-columns: 1fr;
+    gap: 24px 0;
+  }
+
+  .app-footer__section {
+    align-items: flex-start;
+  }
+
+  .app-footer__bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px 0;
+    gap: 12px;
+  }
+
+  .app-footer__brand span {
+    font-size: 0.95rem;
+  }
+}
   }
 
   .app-footer__links-grid {
