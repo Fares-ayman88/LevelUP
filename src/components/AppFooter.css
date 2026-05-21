@@ -350,15 +350,3 @@
     font-size: 0.95rem;
   }
 }
-  }
-
-  .app-footer__links-grid {
-    grid-template-columns: 1fr;
-    gap: 34px;
-  }
-
-  .app-footer__bottom {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}

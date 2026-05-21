@@ -2,6 +2,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import Toast from '../components/Toast.jsx';
+import './CourseDetail.css';
 
 const FALLBACK_COURSE = {
   id: 'fallback-course',
