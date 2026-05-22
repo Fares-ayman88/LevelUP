@@ -1,26 +1,7 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  setDoc,
-  updateDoc,
-  where,
-} from 'firebase/firestore';
-
-import { db } from './firebase.js';
+import { getPocketBase, hasPocketBaseEndpoint } from './pocketbase.js';
 
 const CHATS_COLLECTION = 'mentor_chats';
-const MESSAGES_COLLECTION = 'messages';
-
-function requireDb() {
-  if (!db) {
-    throw new Error('Firestore is not configured.');
-  }
-  return db;
-}
+const MESSAGES_COLLECTION = 'mentor_chat_messages';
 
 function toInt(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
@@ -44,13 +25,6 @@ function toBool(value, fallback = false) {
 function toNullableDate(value) {
   if (!value) return null;
   if (value instanceof Date) return value;
-  if (typeof value?.toDate === 'function') {
-    try {
-      return value.toDate();
-    } catch {
-      return null;
-    }
-  }
   if (typeof value === 'string') {
     const parsed = new Date(value.trim());
     if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -95,111 +69,179 @@ function sortByCreated(items = []) {
   return copy;
 }
 
-function mapSummary(snapshot) {
-  const data = snapshot.data() || {};
-  const conversationId = `${data.conversationKey || snapshot.id || ''}`.trim();
+function quoteFilter(value = '') {
+  return JSON.stringify(`${value || ''}`);
+}
+
+function getPbInstance() {
+  if (!hasPocketBaseEndpoint()) {
+    throw new Error('PocketBase is not configured.');
+  }
+  const pb = getPocketBase();
+  if (!pb) {
+    throw new Error('PocketBase is not initialized.');
+  }
+  return pb;
+}
+
+function mapSummary(record = {}) {
   return {
-    conversationId,
-    userId: `${data.userId || ''}`.trim(),
-    mentorId: `${data.mentorId || ''}`.trim(),
-    mentorName: `${data.mentorName || ''}`.trim(),
-    mentorRole: `${data.mentorRole || ''}`.trim(),
-    mentorImagePath: `${data.mentorImagePath || data.mentorImageUrl || ''}`.trim(),
-    lastMessage: `${data.lastMessage || ''}`.trim(),
-    lastMessageAt: toNullableDate(data.lastMessageAt || data.updatedAt || data.createdAt),
-    lastMessageFromUser: toBool(data.lastMessageFromUser),
-    lastSeenByMentor: toBool(data.lastSeenByMentor, true),
-    activeForMentor: toBool(data.activeForMentor),
-    unreadForUser: toInt(data.unreadForUser),
-    lastUserMessageId: `${data.lastUserMessageId || ''}`.trim(),
+    conversationId: `${record.conversationKey || record.id || ''}`.trim(),
+    chatId: `${record.id || ''}`.trim(),
+    userId: `${record.userId || ''}`.trim(),
+    mentorId: `${record.mentorId || ''}`.trim(),
+    mentorName: `${record.mentorName || ''}`.trim(),
+    mentorRole: `${record.mentorRole || ''}`.trim(),
+    mentorImagePath: `${record.mentorImagePath || ''}`.trim(),
+    userName: `${record.userName || ''}`.trim(),
+    userImagePath: `${record.userImagePath || ''}`.trim(),
+    lastMessage: `${record.lastMessage || ''}`.trim(),
+    lastMessageAt: toNullableDate(record.lastMessageAt || record.updated || record.created),
+    lastMessageFromUser: toBool(record.lastMessageFromUser),
+    lastSeenByMentor: toBool(record.lastSeenByMentor, true),
+    activeForMentor: toBool(record.activeForMentor),
+    unreadForUser: toInt(record.unreadForUser),
+    lastUserMessageId: `${record.lastUserMessageId || ''}`.trim(),
   };
 }
 
-function mapMessage(snapshot) {
-  const data = snapshot.data() || {};
+function mapMessage(record = {}) {
   return {
-    id: snapshot.id,
-    senderRole: `${data.senderRole || 'mentor'}`.trim(),
-    text: `${data.text || ''}`,
-    createdAt: toDate(data.createdAt),
-    seenByMentor: toBool(data.seenByMentor, true),
+    id: `${record.id || ''}`.trim(),
+    senderRole: `${record.senderRole || 'mentor'}`.trim(),
+    text: `${record.text || ''}`.trim(),
+    createdAt: toDate(record.createdAt),
+    seenByMentor: toBool(record.seenByMentor, true),
   };
 }
 
-function conversationRef(conversationId) {
-  return doc(requireDb(), CHATS_COLLECTION, `${conversationId || ''}`.trim());
-}
-
-function messagesRef(conversationId) {
-  return collection(requireDb(), CHATS_COLLECTION, `${conversationId || ''}`.trim(), MESSAGES_COLLECTION);
-}
-
-async function getConversationSnapshot(conversationId) {
+async function getConversationRecord(conversationId) {
   const key = `${conversationId || ''}`.trim();
   if (!key) return null;
-  const snapshot = await getDoc(conversationRef(key));
-  return snapshot.exists() ? snapshot : null;
+  const pb = getPbInstance();
+  const records = await pb.collection(CHATS_COLLECTION).getFullList({
+    filter: `conversationKey = ${quoteFilter(key)}`,
+    limit: 1,
+  });
+  return records.length ? records[0] : null;
+}
+
+async function fetchMessages(conversationId) {
+  const key = `${conversationId || ''}`.trim();
+  if (!key) return [];
+  const pb = getPbInstance();
+  const records = await pb.collection(MESSAGES_COLLECTION).getFullList({
+    filter: `conversationKey = ${quoteFilter(key)}`,
+    sort: 'createdAt',
+  });
+  return sortByCreated(records.map(mapMessage));
+}
+
+async function fetchConversationSummary(conversationId) {
+  const record = await getConversationRecord(conversationId);
+  return record ? mapSummary(record) : null;
 }
 
 export function buildConversationId({ userId, mentorId }) {
   return `${normalizeKey(userId)}__${normalizeKey(mentorId)}`;
 }
 
-export function subscribeUserChats(userId, onData, onError) {
-  const uid = `${userId || ''}`.trim();
-  if (!uid || !db) {
+export function subscribeParticipantChats(participantId, role, onData, onError) {
+  const id = `${participantId || ''}`.trim();
+  if (!id || !hasPocketBaseEndpoint()) {
     onData?.([]);
     return () => {};
   }
 
-  const q = query(collection(db, CHATS_COLLECTION), where('userId', '==', uid));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const items = snapshot.docs.map((docItem) => mapSummary(docItem));
-      onData?.(sortByLatest(items));
-    },
-    (error) => {
+  const pb = getPbInstance();
+  const filterKey = role === 'instructor' ? 'mentorId' : 'userId';
+
+  const emit = async () => {
+    try {
+      const records = await pb.collection(CHATS_COLLECTION).getFullList({
+        filter: `${filterKey} = ${quoteFilter(id)}`,
+        sort: '-lastMessageAt',
+      });
+      onData?.(sortByLatest(records.map(mapSummary)));
+    } catch (error) {
       onError?.(error);
     }
-  );
+  };
+
+  emit().catch((error) => onError?.(error));
+
+  const unsubscribe = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
+    const record = event?.record || {};
+    const matches = `${record[filterKey] || ''}`.trim() === id;
+    if (!matches) return;
+    await emit();
+  });
+
+  return () => {
+    if (typeof unsubscribe === 'function') unsubscribe();
+  };
 }
 
 export function subscribeMessages(conversationId, onData, onError) {
   const key = `${conversationId || ''}`.trim();
-  if (!key || !db) {
+  if (!key || !hasPocketBaseEndpoint()) {
     onData?.([]);
     return () => {};
   }
 
-  return onSnapshot(
-    messagesRef(key),
-    (snapshot) => {
-      const items = snapshot.docs.map((docItem) => mapMessage(docItem));
-      onData?.(sortByCreated(items));
-    },
-    (error) => {
+  const pb = getPbInstance();
+
+  const emit = async () => {
+    try {
+      const items = await fetchMessages(key);
+      onData?.(items);
+    } catch (error) {
       onError?.(error);
     }
-  );
+  };
+
+  emit().catch((error) => onError?.(error));
+
+  const unsubscribe = pb.collection(MESSAGES_COLLECTION).subscribe('*', async (event) => {
+    const record = event?.record || {};
+    if (`${record.conversationKey || ''}`.trim() !== key) return;
+    await emit();
+  });
+
+  return () => {
+    if (typeof unsubscribe === 'function') unsubscribe();
+  };
 }
 
 export function subscribeConversationSummary(conversationId, onData, onError) {
   const key = `${conversationId || ''}`.trim();
-  if (!key || !db) {
+  if (!key || !hasPocketBaseEndpoint()) {
     onData?.(null);
     return () => {};
   }
 
-  return onSnapshot(
-    conversationRef(key),
-    (snapshot) => {
-      onData?.(snapshot.exists() ? mapSummary(snapshot) : null);
-    },
-    (error) => {
+  const pb = getPbInstance();
+
+  const emit = async () => {
+    try {
+      const summary = await fetchConversationSummary(key);
+      onData?.(summary);
+    } catch (error) {
       onError?.(error);
     }
-  );
+  };
+
+  emit().catch((error) => onError?.(error));
+
+  const unsubscribe = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
+    const record = event?.record || {};
+    if (`${record.conversationKey || ''}`.trim() !== key) return;
+    await emit();
+  });
+
+  return () => {
+    if (typeof unsubscribe === 'function') unsubscribe();
+  };
 }
 
 export async function ensureConversation({
@@ -209,15 +251,17 @@ export async function ensureConversation({
   mentorName,
   mentorRole,
   mentorImagePath = '',
+  userName = '',
+  userImagePath = '',
 }) {
   const key = `${conversationId || ''}`.trim();
   const uid = `${userId || ''}`.trim();
   const mid = `${mentorId || ''}`.trim();
-  if (!key || !uid || !mid) return;
+  if (!key || !uid || !mid) return null;
 
   const now = new Date().toISOString();
-  const snapshot = await getConversationSnapshot(key);
-
+  const pb = getPbInstance();
+  const existing = await getConversationRecord(key);
   const payload = {
     conversationKey: key,
     userId: uid,
@@ -225,11 +269,13 @@ export async function ensureConversation({
     mentorName: `${mentorName || ''}`.trim() || 'Mentor',
     mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
     mentorImagePath: `${mentorImagePath || ''}`.trim(),
-    updatedAt: now,
+    userName: `${userName || ''}`.trim(),
+    userImagePath: `${userImagePath || ''}`.trim(),
+    updated: now,
   };
 
-  if (!snapshot) {
-    await setDoc(conversationRef(key), {
+  if (!existing) {
+    return pb.collection(CHATS_COLLECTION).create({
       ...payload,
       lastMessage: '',
       lastMessageAt: now,
@@ -238,21 +284,23 @@ export async function ensureConversation({
       activeForMentor: false,
       unreadForUser: 0,
       lastUserMessageId: '',
-      createdAt: now,
+      created: now,
     });
-    return;
   }
 
-  await setDoc(conversationRef(key), payload, { merge: true });
+  return pb.collection(CHATS_COLLECTION).update(existing.id, payload);
 }
 
-export async function sendUserText({
+export async function sendText({
   conversationId,
   userId,
   mentorId,
   mentorName,
   mentorRole,
   mentorImagePath = '',
+  userName = '',
+  userImagePath = '',
+  senderRole = 'user',
   text,
 }) {
   const key = `${conversationId || ''}`.trim();
@@ -261,100 +309,98 @@ export async function sendUserText({
   const trimmed = `${text || ''}`.trim();
   if (!key || !uid || !mid || !trimmed) return;
 
-  await ensureConversation({
+  const pb = getPbInstance();
+  const chatRecord = await ensureConversation({
     conversationId: key,
     userId: uid,
     mentorId: mid,
     mentorName,
     mentorRole,
     mentorImagePath,
+    userName,
+    userImagePath,
   });
+  if (!chatRecord || !chatRecord.id) return;
 
   const now = new Date().toISOString();
-  const messageRecord = await addDoc(messagesRef(key), {
+  const isUserSender = senderRole === 'user';
+  const messageRecord = await pb.collection(MESSAGES_COLLECTION).create({
     chatId: key,
     conversationKey: key,
-    senderRole: 'user',
-    senderId: uid,
+    senderRole: senderRole || 'mentor',
+    senderId: isUserSender ? uid : mid,
     text: trimmed,
-    seenByMentor: false,
+    seenByMentor: isUserSender ? false : true,
     createdAt: now,
   });
 
-  await setDoc(
-    conversationRef(key),
-    {
-      conversationKey: key,
-      userId: uid,
-      mentorId: mid,
-      mentorName: `${mentorName || ''}`.trim() || 'Mentor',
-      mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
-      mentorImagePath: `${mentorImagePath || ''}`.trim(),
-      lastMessage: previewText(trimmed),
-      lastMessageAt: now,
-      lastMessageFromUser: true,
-      lastSeenByMentor: false,
-      activeForMentor: true,
-      unreadForUser: 0,
-      lastUserMessageId: messageRecord.id,
-      updatedAt: now,
-    },
-    { merge: true }
-  );
+  const unreadForUser = isUserSender ? 0 : toInt(chatRecord.unreadForUser || 0) + 1;
+
+  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
+    conversationKey: key,
+    userId: uid,
+    mentorId: mid,
+    mentorName: `${mentorName || ''}`.trim() || 'Mentor',
+    mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
+    mentorImagePath: `${mentorImagePath || ''}`.trim(),
+    userName: `${userName || ''}`.trim(),
+    userImagePath: `${userImagePath || ''}`.trim(),
+    lastMessage: previewText(trimmed),
+    lastMessageAt: now,
+    lastMessageFromUser: isUserSender,
+    lastSeenByMentor: isUserSender ? false : true,
+    activeForMentor: true,
+    unreadForUser,
+    lastUserMessageId: messageRecord.id,
+    updated: now,
+  });
 }
 
 export async function markMentorSeen(conversationId) {
   const key = `${conversationId || ''}`.trim();
   if (!key) return;
-  const snapshot = await getConversationSnapshot(key);
-  if (!snapshot) return;
+  const pb = getPbInstance();
+  const chatRecord = await getConversationRecord(key);
+  if (!chatRecord || !chatRecord.id) return;
 
-  const data = snapshot.data() || {};
-  const lastUserMessageId = `${data.lastUserMessageId || ''}`.trim();
+  const lastUserMessageId = `${chatRecord.lastUserMessageId || ''}`.trim();
   if (lastUserMessageId) {
-    await updateDoc(
-      doc(requireDb(), CHATS_COLLECTION, key, MESSAGES_COLLECTION, lastUserMessageId),
-      {
-        seenByMentor: true,
-      }
-    );
+    await pb.collection(MESSAGES_COLLECTION).update(lastUserMessageId, {
+      seenByMentor: true,
+    });
   }
 
-  await setDoc(
-    conversationRef(key),
-    {
-      lastSeenByMentor: true,
-      activeForMentor: true,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
+    lastSeenByMentor: true,
+    activeForMentor: true,
+    updated: new Date().toISOString(),
+  });
 }
 
 export async function setMentorActive(conversationId, active) {
   const key = `${conversationId || ''}`.trim();
   if (!key) return;
-  await setDoc(
-    conversationRef(key),
-    {
-      activeForMentor: Boolean(active),
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  const pb = getPbInstance();
+  const chatRecord = await getConversationRecord(key);
+  if (!chatRecord || !chatRecord.id) return;
+
+  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
+    activeForMentor: Boolean(active),
+    updated: new Date().toISOString(),
+  });
 }
 
 export async function markReadForUser(conversationId) {
   const key = `${conversationId || ''}`.trim();
   if (!key) return;
-  await setDoc(
-    conversationRef(key),
-    {
-      unreadForUser: 0,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  const pb = getPbInstance();
+  const chatRecord = await getConversationRecord(key);
+  if (!chatRecord || !chatRecord.id) return;
+
+  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
+    unreadForUser: 0,
+    updated: new Date().toISOString(),
+  });
 }
 
 export function formatMessageTime(value) {

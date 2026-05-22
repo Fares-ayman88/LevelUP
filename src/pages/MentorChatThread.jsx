@@ -6,14 +6,15 @@ import {
   buildConversationId,
   ensureConversation,
   formatMessageTime,
+  markMentorSeen,
   markReadForUser,
-  sendUserText,
+  sendText,
   subscribeConversationSummary,
   subscribeMessages,
 } from '../services/mentorChatService.js';
-import { useAuth } from '../state/auth.jsx';
+import { resolveAuthRole, useAuth } from '../state/auth.jsx';
 
-function fallbackMentorId(name = '') {
+function fallbackId(name = '') {
   const normalized = name
     .toString()
     .trim()
@@ -21,22 +22,13 @@ function fallbackMentorId(name = '') {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '');
-  return normalized || 'mentor';
+  return normalized || 'unknown';
 }
 
-function mapMessages(messages, mentorName) {
-  if (!messages.length) {
-    return [
-      {
-        id: 'welcome',
-        from: 'assistant',
-        text: `Hi, I am ${mentorName}. How can I help you?`,
-      },
-    ];
-  }
-  return messages.map((message) => ({
+function mapMessages(messages, currentRole) {
+  return (messages || []).map((message) => ({
     id: message.id,
-    from: message.senderRole === 'user' ? 'user' : 'assistant',
+    from: message.senderRole === currentRole ? 'user' : 'assistant',
     type: 'text',
     text: message.text,
     time: formatMessageTime(message.createdAt),
@@ -46,31 +38,43 @@ function mapMessages(messages, mentorName) {
 export default function MentorChatThread() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
+  const role = resolveAuthRole(profile, user);
+  const isInstructor = role === 'instructor';
+
+  const counterpartId = `${location.state?.participantId || location.state?.mentorId || fallbackId(location.state?.participantName || '')}`.trim();
+  const participantName = `${location.state?.participantName || location.state?.name || (isInstructor ? 'Student' : 'Mentor')}`.trim();
+  const participantRole = `${location.state?.participantRole || location.state?.role || (isInstructor ? 'Student' : 'Mentor')}`.trim();
+  const participantImagePath = `${location.state?.participantImagePath || location.state?.imagePath || ''}`.trim();
+
+  const mentorId = isInstructor ? user?.uid || '' : counterpartId;
+  const userId = isInstructor ? counterpartId : user?.uid || '';
+  const mentorName = isInstructor ? `${profile?.name || user?.displayName || 'Instructor'}`.trim() : participantName;
+  const mentorRole = isInstructor ? 'Instructor' : participantRole;
+  const mentorImagePath = isInstructor ? `${profile?.photoUrl || ''}`.trim() : participantImagePath;
+  const userName = isInstructor ? participantName : `${profile?.name || user?.displayName || 'Student'}`.trim();
+  const userImagePath = isInstructor ? participantImagePath : `${profile?.photoUrl || ''}`.trim();
+
+  const conversationId = useMemo(() => {
+    if (!user?.uid || !counterpartId) return '';
+    if (location.state?.conversationId) return `${location.state.conversationId}`.trim();
+    return buildConversationId({
+      userId: isInstructor ? counterpartId : user.uid,
+      mentorId: isInstructor ? user.uid : counterpartId,
+    });
+  }, [counterpartId, isInstructor, location.state?.conversationId, user?.uid]);
+
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [messages, setMessages] = useState([]);
   const [summary, setSummary] = useState(null);
 
-  const mentorName = `${location.state?.name || 'Mentor'}`.trim() || 'Mentor';
-  const mentorRole = `${location.state?.role || 'Mentor'}`.trim() || 'Mentor';
-  const mentorId = `${location.state?.mentorId || fallbackMentorId(mentorName)}`.trim();
-  const mentorImagePath = `${location.state?.imagePath || ''}`.trim();
-
-  const conversationId = useMemo(() => {
-    if (!user?.uid || !mentorId) return '';
-    return buildConversationId({
-      userId: user.uid,
-      mentorId,
-    });
-  }, [mentorId, user?.uid]);
-
   useEffect(() => {
     if (!user?.uid || !conversationId) {
       setLoading(false);
       if (!user?.uid) {
-        setError('Sign in to open mentor chat.');
+        setError('Sign in to open chat.');
       }
       return () => {};
     }
@@ -83,22 +87,29 @@ export default function MentorChatThread() {
       try {
         await ensureConversation({
           conversationId,
-          userId: user.uid,
+          userId,
           mentorId,
           mentorName,
           mentorRole,
           mentorImagePath,
+          userName,
+          userImagePath,
         });
-        await markReadForUser(conversationId);
+
+        if (isInstructor) {
+          await markMentorSeen(conversationId);
+        } else {
+          await markReadForUser(conversationId);
+        }
       } catch (err) {
         if (disposed) return;
-        setError(`${err?.message || err || 'Failed to open mentor chat.'}`);
+        setError(`${err?.message || err || 'Failed to open chat.'}`);
       } finally {
         if (!disposed) setLoading(false);
       }
     })();
 
-    const unSubMessages = subscribeMessages(
+    const unsubMessages = subscribeMessages(
       conversationId,
       (items) => {
         if (disposed) return;
@@ -107,7 +118,7 @@ export default function MentorChatThread() {
       () => {}
     );
 
-    const unSubSummary = subscribeConversationSummary(
+    const unsubSummary = subscribeConversationSummary(
       conversationId,
       (item) => {
         if (disposed) return;
@@ -118,37 +129,35 @@ export default function MentorChatThread() {
 
     return () => {
       disposed = true;
-      unSubMessages();
-      unSubSummary();
+      unsubMessages();
+      unsubSummary();
     };
-  }, [
-    conversationId,
-    mentorId,
-    mentorImagePath,
-    mentorName,
-    mentorRole,
-    user?.uid,
-  ]);
+  }, [conversationId, isInstructor, mentorId, mentorImagePath, mentorName, mentorRole, userId, user?.uid, userImagePath, userName]);
 
   const uiMessages = useMemo(
-    () => mapMessages(messages, mentorName),
-    [messages, mentorName]
+    () => mapMessages(messages, isInstructor ? 'mentor' : 'user'),
+    [messages, isInstructor]
   );
 
   const handleSendText = async (text) => {
-    if (!user?.uid || !conversationId) return;
+    if (!conversationId || !user?.uid) return;
     setSending(true);
     try {
-      await sendUserText({
+      await sendText({
         conversationId,
-        userId: user.uid,
+        userId,
         mentorId,
         mentorName,
         mentorRole,
         mentorImagePath,
+        userName,
+        userImagePath,
+        senderRole: isInstructor ? 'mentor' : 'user',
         text,
       });
-      await markReadForUser(conversationId);
+      if (!isInstructor) {
+        await markReadForUser(conversationId);
+      }
     } finally {
       setSending(false);
     }
@@ -180,10 +189,10 @@ export default function MentorChatThread() {
 
   return (
     <ChatThread
-      title={mentorName}
-      subtitle={mentorRole}
+      title={participantName}
+      subtitle={participantRole}
       onBack={() => navigate('/mentor-chats')}
-      onCall={() => navigate('/call', { state: { name: mentorName } })}
+      onCall={() => navigate('/call', { state: { name: participantName } })}
       messages={uiMessages}
       onSendText={handleSendText}
       sending={sending}
@@ -191,10 +200,10 @@ export default function MentorChatThread() {
       showAttachmentButton={false}
       showSearch={false}
       showMenu={false}
-      avatarText={mentorName}
+      avatarText={participantName}
       showCall
       showVideo={false}
-      statusOnline={summary?.activeForMentor}
+      statusOnline={Boolean(summary?.activeForMentor && !isInstructor)}
     />
   );
 }

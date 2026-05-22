@@ -282,6 +282,34 @@ export default function Home() {
       onClick: () => navigate('/certificate'),
     },
   ];
+
+  const instructorActions = [
+    {
+      key: 'mentorCourses',
+      label: 'Manage Courses',
+      hint: 'Create, update, and publish your course content.',
+      icon: 'auto_stories',
+      variant: 'round',
+      onClick: () => navigate('/mentor-courses'),
+    },
+    {
+      key: 'mentorChats',
+      label: 'Student Messages',
+      hint: 'Answer learners and keep your classes engaged.',
+      icon: 'chat_bubble_outline',
+      variant: 'outlined',
+      onClick: () => navigate('/mentor-chats'),
+    },
+    {
+      key: 'mentorTransactions',
+      label: 'Earnings',
+      hint: 'View payouts, revenue, and recent transactions.',
+      icon: 'payments',
+      variant: 'round',
+      onClick: () => navigate('/mentor-transactions'),
+    },
+  ];
+
   const renderSidebarAction = (action, className, keyPrefix) => (
     <button
       key={`${keyPrefix}-${action.key}`}
@@ -395,6 +423,15 @@ export default function Home() {
               >
                 {learningActions.map((action) =>
                   renderSidebarAction(action, 'home-sidebar-recommendation', 'student-learning')
+                )}
+              </div>
+            ) : isInstructor ? (
+              <div
+                className="home-sidebar-recommendations home-sidebar-recommendations--student"
+                aria-label="Instructor quick links"
+              >
+                {instructorActions.map((action) =>
+                  renderSidebarAction(action, 'home-sidebar-recommendation', 'instructor-action')
                 )}
               </div>
             ) : (

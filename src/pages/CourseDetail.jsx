@@ -378,9 +378,27 @@ export default function CourseDetail() {
               <div className="instructor-name">{mentorName}</div>
               <div className="instructor-sub">{mentorSubtitle}</div>
             </div>
-            <span className="instructor-chat" aria-hidden>
+            <button
+              type="button"
+              className="instructor-chat"
+              aria-label={`Message ${mentorName}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate('/mentor-chat-thread', {
+                  state: {
+                    conversationId: undefined,
+                    participantId: course.mentorId || mentorName,
+                    participantName: mentorName,
+                    participantRole: mentorSubtitle,
+                    participantImagePath: course.mentorImagePath || '',
+                    mentorId: course.mentorId || undefined,
+                    userName: undefined,
+                  },
+                });
+              }}
+            >
               <Icon name="chat_bubble_outline" variant="outlined" className="instructor-chat__icon" />
-            </span>
+            </button>
           </button>
         </div>
         <div className="course-section-block">

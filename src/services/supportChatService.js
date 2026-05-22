@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth';
 
 import { auth, db } from './firebase.js';
+import { getPocketBase, hasPocketBaseEndpoint } from './pocketbase.js';
 import {
   STATIC_ADMIN_PREFERRED_ALIASES,
   capitalizeAlias,
@@ -27,7 +28,7 @@ import {
 } from './staticAdmins.js';
 
 const CHATS_COLLECTION = 'support_chats';
-const MESSAGES_COLLECTION = 'messages';
+const MESSAGES_COLLECTION = 'support_chat_messages';
 const USERS_COLLECTION = 'users';
 const MAX_IMAGE_BYTES = 450 * 1024;
 const MAX_FILE_BYTES = 200 * 1024;
@@ -41,6 +42,48 @@ function requireDb() {
     throw new Error('Firestore is not configured.');
   }
   return db;
+}
+
+function isAutoCancelledError(err) {
+  const msg = `${err?.message || ''}`.toLowerCase();
+  return msg.includes('autocancelled') || msg.includes('auto-cancelled') || msg.includes('auto cancelled');
+}
+
+async function safeGetFullList(pb, collection, opts) {
+  try {
+    return await pb.collection(collection).getFullList(opts);
+  } catch (err) {
+    if (isAutoCancelledError(err)) {
+      // benign - request cancelled due to a newer request; treat as empty result
+      return [];
+    }
+    // log and return empty instead of throwing to avoid UI crash from transient PB errors
+    // eslint-disable-next-line no-console
+    console.warn('PocketBase getFullList failed', collection, err);
+    return [];
+  }
+}
+
+async function safeCreate(pb, collection, payload) {
+  try {
+    return await pb.collection(collection).create(payload);
+  } catch (err) {
+    if (isAutoCancelledError(err)) return null;
+    // eslint-disable-next-line no-console
+    console.warn('PocketBase create failed', collection, err);
+    return null;
+  }
+}
+
+async function safeUpdate(pb, collection, id, payload) {
+  try {
+    return await pb.collection(collection).update(id, payload);
+  } catch (err) {
+    if (isAutoCancelledError(err)) return null;
+    // eslint-disable-next-line no-console
+    console.warn('PocketBase update failed', collection, id, err);
+    return null;
+  }
 }
 
 function toInt(value) {
@@ -111,10 +154,10 @@ function mapAttachment(data = {}) {
 }
 
 function mapMessage(snapshot) {
-  const record = snapshot.data() || {};
+  const record = snapshot.data ? snapshot.data() : snapshot || {};
   const rawAttachments = Array.isArray(record.attachments) ? record.attachments : [];
   return {
-    id: snapshot.id,
+    id: snapshot.id || record.id || '',
     senderRole: `${record.senderRole || ''}`.trim(),
     text: `${record.text || ''}`,
     type: `${record.type || 'text'}`.trim(),
@@ -124,9 +167,9 @@ function mapMessage(snapshot) {
 }
 
 function mapSummary(snapshot) {
-  const record = snapshot.data() || {};
+  const record = snapshot.data ? snapshot.data() : snapshot || {};
   return {
-    chatId: snapshot.id,
+    chatId: snapshot.id || record.id || '',
     userId: `${record.userId || ''}`.trim(),
     userName: `${record.userName || ''}`.trim(),
     userEmail: `${record.userEmail || ''}`.trim(),
@@ -135,7 +178,7 @@ function mapSummary(snapshot) {
     adminEmail: `${record.adminEmail || ''}`.trim(),
     lastMessage: `${record.lastMessage || ''}`.trim(),
     lastMessageSender: record.lastMessageSender ? `${record.lastMessageSender}` : '',
-    lastMessageAt: toNullableDate(record.lastMessageAt || record.updatedAt || record.createdAt),
+    lastMessageAt: toNullableDate(record.lastMessageAt || record.updated || record.created),
     unreadForAdmin: toInt(record.unreadForAdmin),
     unreadForUser: toInt(record.unreadForUser),
     lastReadByAdminAt: toNullableDate(record.lastReadByAdminAt),
@@ -327,7 +370,10 @@ async function encodeAttachments(attachments) {
 }
 
 function chatRef(chatId) {
-  return doc(requireDb(), CHATS_COLLECTION, `${chatId || ''}`.trim());
+  const key = `${(chatId || '').trim()}`;
+  if (!key) return null;
+  if (!hasPocketBaseEndpoint()) return doc(requireDb(), CHATS_COLLECTION, key);
+  return key;
 }
 
 function chatMessagesRef(chatId) {
@@ -337,8 +383,13 @@ function chatMessagesRef(chatId) {
 async function findChatSnapshot(chatId) {
   const key = `${chatId || ''}`.trim();
   if (!key) return null;
-  const snapshot = await getDoc(chatRef(key));
-  return snapshot.exists() ? snapshot : null;
+  if (!hasPocketBaseEndpoint()) return null;
+  const pb = getPocketBase();
+  const records = await safeGetFullList(pb, CHATS_COLLECTION, {
+    filter: `conversationKey = ${JSON.stringify(key)}`,
+    limit: 1,
+  });
+  return records.length ? records[0] : null;
 }
 
 async function ensureChatRecordForUser(user) {
@@ -468,141 +519,265 @@ export async function ensureAdminAliasSignedIn(alias, plainPassword) {
 }
 
 export function subscribeAdminChats(onData, onError) {
-  if (!db) {
+  if (!hasPocketBaseEndpoint()) {
     onData?.([]);
     return () => {};
   }
+  const pb = getPocketBase();
+  let closed = false;
 
-  return onSnapshot(
-    collection(db, CHATS_COLLECTION),
-    (snapshot) => {
-      const items = snapshot.docs.map((docItem) => mapSummary(docItem));
-      onData?.(sortChats(items));
-    },
-    (error) => {
-      onError?.(error);
+  const emit = async () => {
+    try {
+      const records = await safeGetFullList(pb, CHATS_COLLECTION, { sort: '-lastMessageAt' });
+      onData?.(sortChats(records.map((r) => mapSummary(r))));
+    } catch (err) {
+      onError?.(err);
     }
-  );
+  };
+
+  emit().catch((err) => onError?.(err));
+
+  const unsub = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
+    if (closed) return;
+    await emit();
+  });
+
+  return () => {
+    closed = true;
+    if (typeof unsub === 'function') unsub();
+  };
 }
 
 export function subscribeUserChats(userId, onData, onError) {
   const uid = `${userId || ''}`.trim();
-  if (!uid || !db) {
+  if (!uid || !hasPocketBaseEndpoint()) {
     onData?.([]);
     return () => {};
   }
+  const pb = getPocketBase();
+  let closed = false;
 
-  return onSnapshot(
-    chatRef(uid),
-    (snapshot) => {
-      onData?.(snapshot.exists() ? [mapSummary(snapshot)] : []);
-    },
-    (error) => {
-      onError?.(error);
+  const emit = async () => {
+    try {
+      const records = await safeGetFullList(pb, CHATS_COLLECTION, {
+        filter: `conversationKey = ${JSON.stringify(uid)}`,
+        limit: 1,
+      });
+      onData?.(records.length ? [mapSummary(records[0])] : []);
+    } catch (err) {
+      onError?.(err);
     }
-  );
+  };
+
+  emit().catch((err) => onError?.(err));
+
+  const unsub = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
+    const record = event?.record || {};
+    if (`${record.conversationKey || ''}`.trim() !== uid) return;
+    if (closed) return;
+    await emit();
+  });
+
+  return () => {
+    closed = true;
+    if (typeof unsub === 'function') unsub();
+  };
 }
 
 export function subscribeAdmins(onData, onError) {
   const fallback = fallbackAdmins();
   onData?.(fallback);
-
-  if (!db || !auth?.currentUser) {
+  if (!hasPocketBaseEndpoint() || !auth?.currentUser) {
     return () => {};
   }
-
-  let unsubscribeUsers = () => {};
   let closed = false;
+  const pb = getPocketBase();
 
   void currentUserIsAdmin().then((isAdmin) => {
     if (!isAdmin || closed) return;
-    unsubscribeUsers = onSnapshot(
-      query(collection(db, USERS_COLLECTION), where('role', '==', 'admin')),
-      (snapshot) => {
-        const admins = snapshot.docs.map((docItem) => mapAdmin(docItem));
+
+    const emit = async () => {
+      try {
+        const records = await safeGetFullList(pb, USERS_COLLECTION, { filter: `role = "admin"` });
+        const admins = records.map((r) => mapAdmin(r));
         const deduped = dedupeAdmins(admins);
         const preferred = orderPreferredAdmins(deduped);
         onData?.(preferred.length ? preferred : deduped.length ? deduped : fallback);
-      },
-      (error) => {
-        onError?.(error);
+      } catch (err) {
+        onError?.(err);
         onData?.(fallback);
       }
-    );
-  });
+    };
 
+    emit().catch(() => {});
+
+    const unsub = pb.collection(USERS_COLLECTION).subscribe('*', async () => {
+      if (closed) return;
+      await emit();
+    });
+
+    // return cleanup when outer returns
+    return () => {
+      closed = true;
+      if (typeof unsub === 'function') unsub();
+    };
+  });
   return () => {
     closed = true;
-    unsubscribeUsers();
   };
 }
 
 export function subscribeChatSummary(chatId, onData, onError) {
   const key = `${chatId || ''}`.trim();
-  if (!key || !db) {
+  if (!key || !hasPocketBaseEndpoint()) {
     onData?.(null);
     return () => {};
   }
+  const pb = getPocketBase();
+  let closed = false;
 
-  return onSnapshot(
-    chatRef(key),
-    (snapshot) => {
-      onData?.(snapshot.exists() ? mapSummary(snapshot) : null);
-    },
-    (error) => {
-      onError?.(error);
+  const emit = async () => {
+    try {
+      const records = await safeGetFullList(pb, CHATS_COLLECTION, {
+        filter: `conversationKey = ${JSON.stringify(key)}`,
+        limit: 1,
+      });
+      onData?.(records.length ? mapSummary(records[0]) : null);
+    } catch (err) {
+      onError?.(err);
     }
-  );
+  };
+
+  emit().catch((err) => onError?.(err));
+
+  const unsub = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
+    const record = event?.record || {};
+    if (`${record.conversationKey || ''}`.trim() !== key) return;
+    if (closed) return;
+    await emit();
+  });
+
+  return () => {
+    closed = true;
+    if (typeof unsub === 'function') unsub();
+  };
 }
 
 export function subscribeMessages(chatId, onData, onError) {
   const key = `${chatId || ''}`.trim();
-  if (!key || !db) {
+  if (!key || !hasPocketBaseEndpoint()) {
     onData?.([]);
     return () => {};
   }
+  const pb = getPocketBase();
+  let closed = false;
 
-  return onSnapshot(
-    chatMessagesRef(key),
-    (snapshot) => {
-      const items = snapshot.docs.map((docItem) => mapMessage(docItem));
-      onData?.(sortMessages(items));
-    },
-    (error) => {
-      onError?.(error);
+  const emit = async () => {
+    try {
+      const records = await safeGetFullList(pb, MESSAGES_COLLECTION, {
+        filter: `conversationKey = ${JSON.stringify(key)}`,
+        sort: 'createdAt',
+      });
+      onData?.(sortMessages(records.map((r) => mapMessage(r))));
+    } catch (err) {
+      onError?.(err);
     }
-  );
+  };
+
+  emit().catch((err) => onError?.(err));
+
+  const unsub = pb.collection(MESSAGES_COLLECTION).subscribe('*', async (event) => {
+    const record = event?.record || {};
+    if (`${record.conversationKey || ''}`.trim() !== key) return;
+    if (closed) return;
+    await emit();
+  });
+
+  return () => {
+    closed = true;
+    if (typeof unsub === 'function') unsub();
+  };
 }
 
 export async function ensureChatForUser(user) {
-  return ensureChatRecordForUser(user);
+  const uid = `${user?.uid || ''}`.trim();
+  if (!uid) return null;
+  if (!hasPocketBaseEndpoint()) return ensureChatRecordForUser(user);
+  const pb = getPocketBase();
+  const now = new Date().toISOString();
+  const records = await safeGetFullList(pb, CHATS_COLLECTION, { filter: `conversationKey = ${JSON.stringify(uid)}`, limit: 1 });
+  if (records.length) {
+    const existing = records[0];
+    await safeUpdate(pb, CHATS_COLLECTION, existing.id, {
+      userId: uid,
+      userName: resolveUserName(user),
+      userEmail: resolveUserEmail(user),
+      updated: now,
+    });
+    return mapSummary({ ...records[0], id: records[0].id });
+  }
+  const created = await pb.collection(CHATS_COLLECTION).create({
+    conversationKey: uid,
+    userId: uid,
+    userName: resolveUserName(user),
+    userEmail: resolveUserEmail(user),
+    unreadForAdmin: 0,
+    unreadForUser: 0,
+    activeForAdmin: false,
+    activeForUser: false,
+    updated: now,
+    created: now,
+  });
+  return mapSummary(created);
 }
 
 export async function markRead({ chatId, isAdmin }) {
   const key = `${chatId || ''}`.trim();
   if (!key) return;
-  await setDoc(
-    chatRef(key),
-    {
-      [isAdmin ? 'unreadForAdmin' : 'unreadForUser']: 0,
-      [isAdmin ? 'lastReadByAdminAt' : 'lastReadByUserAt']: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  if (!hasPocketBaseEndpoint()) {
+    await setDoc(
+      chatRef(key),
+      {
+        [isAdmin ? 'unreadForAdmin' : 'unreadForUser']: 0,
+        [isAdmin ? 'lastReadByAdminAt' : 'lastReadByUserAt']: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return;
+  }
+  const pb = getPocketBase();
+  const records = await safeGetFullList(pb, CHATS_COLLECTION, { filter: `conversationKey = ${JSON.stringify(key)}`, limit: 1 });
+  if (!records.length) return;
+  const rec = records[0];
+  await pb.collection(CHATS_COLLECTION).update(rec.id, {
+    [isAdmin ? 'unreadForAdmin' : 'unreadForUser']: 0,
+    [isAdmin ? 'lastReadByAdminAt' : 'lastReadByUserAt']: new Date().toISOString(),
+    updated: new Date().toISOString(),
+  });
 }
 
 export async function setActive({ chatId, isAdmin, active }) {
   const key = `${chatId || ''}`.trim();
   if (!key) return;
-  await setDoc(
-    chatRef(key),
-    {
-      [isAdmin ? 'activeForAdmin' : 'activeForUser']: Boolean(active),
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  if (!hasPocketBaseEndpoint()) {
+    await setDoc(
+      chatRef(key),
+      {
+        [isAdmin ? 'activeForAdmin' : 'activeForUser']: Boolean(active),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return;
+  }
+  const pb = getPocketBase();
+  const records = await safeGetFullList(pb, CHATS_COLLECTION, { filter: `conversationKey = ${JSON.stringify(key)}`, limit: 1 });
+  if (!records.length) return;
+  await pb.collection(CHATS_COLLECTION).update(records[0].id, {
+    [isAdmin ? 'activeForAdmin' : 'activeForUser']: Boolean(active),
+    updated: new Date().toISOString(),
+  });
 }
 
 export async function sendText({
@@ -617,18 +792,46 @@ export async function sendText({
   const key = `${chatId || ''}`.trim();
   const trimmed = `${text || ''}`.trim();
   if (!key || !trimmed) return;
-
-  const snapshot = isAdmin ? await findChatSnapshot(key) : null;
-  if (isAdmin && !snapshot) return;
-
-  const resolvedChatId = isAdmin ? key : `${user?.uid || ''}`.trim();
-  if (!isAdmin) {
-    await ensureChatRecordForUser(user);
-  }
   const now = new Date().toISOString();
+  if (!hasPocketBaseEndpoint()) {
+    const snapshot = isAdmin ? await findChatSnapshot(key) : null;
+    if (isAdmin && !snapshot) return;
+    const resolvedChatId = isAdmin ? key : `${user?.uid || ''}`.trim();
+    if (!isAdmin) {
+      await ensureChatRecordForUser(user);
+    }
+    await addDoc(chatMessagesRef(resolvedChatId), {
+      chatId: resolvedChatId,
+      senderRole: isAdmin ? 'admin' : 'user',
+      senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
+      text: trimmed,
+      type: 'text',
+      attachments: [],
+      createdAt: now,
+    });
 
-  await addDoc(chatMessagesRef(resolvedChatId), {
-    chatId: resolvedChatId,
+    await updateChatSummary({
+      chatId: resolvedChatId,
+      user,
+      isAdmin,
+      lastMessage: previewText(trimmed),
+      now,
+      adminId,
+      adminName,
+      adminEmail,
+    });
+    return;
+  }
+
+  const pb = getPocketBase();
+  const resolvedChatKey = isAdmin ? key : `${user?.uid || ''}`.trim();
+  if (!isAdmin) {
+    await ensureChatForUser(user);
+  }
+
+  const message = await safeCreate(pb, MESSAGES_COLLECTION, {
+    chatId: resolvedChatKey,
+    conversationKey: resolvedChatKey,
     senderRole: isAdmin ? 'admin' : 'user',
     senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
     text: trimmed,
@@ -637,16 +840,40 @@ export async function sendText({
     createdAt: now,
   });
 
-  await updateChatSummary({
-    chatId: resolvedChatId,
-    user,
-    isAdmin,
+  // update chat summary
+  const records = await safeGetFullList(pb, CHATS_COLLECTION, { filter: `conversationKey = ${JSON.stringify(resolvedChatKey)}`, limit: 1 });
+  const chatRecord = records.length ? records[0] : null;
+  const unreadForAdmin = toInt(chatRecord?.unreadForAdmin);
+  const unreadForUser = toInt(chatRecord?.unreadForUser);
+  const payload = {
     lastMessage: previewText(trimmed),
-    now,
-    adminId,
-    adminName,
-    adminEmail,
-  });
+    lastMessageAt: now,
+    lastMessageSender: isAdmin ? 'admin' : 'user',
+    unreadForAdmin: isAdmin ? unreadForAdmin : unreadForAdmin + 1,
+    unreadForUser: isAdmin ? unreadForUser + 1 : unreadForUser,
+    updated: now,
+  };
+  if (!isAdmin) {
+    payload.userId = `${user?.uid || ''}`.trim();
+    payload.userName = resolveUserName(user);
+    payload.userEmail = resolveUserEmail(user);
+    if (`${adminId || ''}`.trim()) payload.adminId = `${adminId}`.trim();
+    if (`${adminName || ''}`.trim()) payload.adminName = `${adminName}`.trim();
+    if (`${adminEmail || ''}`.trim()) payload.adminEmail = `${adminEmail}`.trim();
+  } else {
+    const resolvedAdminEmail = `${adminEmail || user?.email || ''}`.trim();
+    const resolvedAdminId = `${adminId || user?.uid || ''}`.trim();
+    const resolvedAdminName = `${adminName || user?.displayName || ''}`.trim() || 'Admin';
+    if (resolvedAdminId) payload.adminId = resolvedAdminId;
+    if (resolvedAdminName) payload.adminName = resolvedAdminName;
+    if (resolvedAdminEmail) payload.adminEmail = resolvedAdminEmail;
+  }
+
+  if (chatRecord && chatRecord.id) {
+    await safeUpdate(pb, CHATS_COLLECTION, chatRecord.id, payload);
+  } else {
+    await safeCreate(pb, CHATS_COLLECTION, { conversationKey: resolvedChatKey, ...payload, created: now });
+  }
 }
 
 export async function sendAttachments({
@@ -693,21 +920,49 @@ export async function sendAttachments({
 
   const key = `${chatId || ''}`.trim();
   if (!key) return;
-
-  const snapshot = isAdmin ? await findChatSnapshot(key) : null;
-  if (isAdmin && !snapshot) return;
-
-  const resolvedChatId = isAdmin ? key : `${user?.uid || ''}`.trim();
-  if (!isAdmin) {
-    await ensureChatRecordForUser(user);
-  }
-  const type = allImages ? 'images' : 'files';
+  const now = new Date().toISOString();
   const uploaded = await encodeAttachments(list);
   if (!uploaded.length) return;
-  const now = new Date().toISOString();
 
-  await addDoc(chatMessagesRef(resolvedChatId), {
-    chatId: resolvedChatId,
+  if (!hasPocketBaseEndpoint()) {
+    const snapshot = isAdmin ? await findChatSnapshot(key) : null;
+    if (isAdmin && !snapshot) return;
+    const resolvedChatId = isAdmin ? key : `${user?.uid || ''}`.trim();
+    if (!isAdmin) {
+      await ensureChatRecordForUser(user);
+    }
+    const type = allImages ? 'images' : 'files';
+    await addDoc(chatMessagesRef(resolvedChatId), {
+      chatId: resolvedChatId,
+      senderRole: isAdmin ? 'admin' : 'user',
+      senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
+      text: '',
+      type,
+      attachments: uploaded,
+      createdAt: now,
+    });
+
+    await updateChatSummary({
+      chatId: resolvedChatId,
+      user,
+      isAdmin,
+      lastMessage: type === 'images' ? 'Image' : previewText(uploaded[0].name),
+      now,
+      adminId,
+      adminName,
+      adminEmail,
+    });
+    return;
+  }
+
+  const pb = getPocketBase();
+  const resolvedChatKey = isAdmin ? key : `${user?.uid || ''}`.trim();
+  if (!isAdmin) await ensureChatForUser(user);
+  const type = allImages ? 'images' : 'files';
+
+  await pb.collection(MESSAGES_COLLECTION).create({
+    chatId: resolvedChatKey,
+    conversationKey: resolvedChatKey,
     senderRole: isAdmin ? 'admin' : 'user',
     senderId: isAdmin ? resolveAdminSenderId(user, adminEmail) : `${user?.uid || ''}`.trim(),
     text: '',
@@ -716,16 +971,29 @@ export async function sendAttachments({
     createdAt: now,
   });
 
-  await updateChatSummary({
-    chatId: resolvedChatId,
-    user,
-    isAdmin,
+  // update summary (reuse logic from sendText)
+  const records = await pb.collection(CHATS_COLLECTION).getFullList({ filter: `conversationKey = ${JSON.stringify(resolvedChatKey)}`, limit: 1 });
+  const chatRecord = records.length ? records[0] : null;
+  const unreadForAdmin = toInt(chatRecord?.unreadForAdmin);
+  const unreadForUser = toInt(chatRecord?.unreadForUser);
+  const payload = {
     lastMessage: type === 'images' ? 'Image' : previewText(uploaded[0].name),
-    now,
-    adminId,
-    adminName,
-    adminEmail,
-  });
+    lastMessageAt: now,
+    lastMessageSender: isAdmin ? 'admin' : 'user',
+    unreadForAdmin: isAdmin ? unreadForAdmin : unreadForAdmin + 1,
+    unreadForUser: isAdmin ? unreadForUser + 1 : unreadForUser,
+    updated: now,
+  };
+  if (!isAdmin) {
+    payload.userId = `${user?.uid || ''}`.trim();
+    payload.userName = resolveUserName(user);
+    payload.userEmail = resolveUserEmail(user);
+  }
+  if (chatRecord && chatRecord.id) {
+    await pb.collection(CHATS_COLLECTION).update(chatRecord.id, payload);
+  } else {
+    await pb.collection(CHATS_COLLECTION).create({ conversationKey: resolvedChatKey, ...payload, created: now });
+  }
 }
 
 export function formatMessageTime(value) {

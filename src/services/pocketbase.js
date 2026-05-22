@@ -3,8 +3,9 @@ import PocketBase from 'pocketbase';
 const STORAGE_KEY = 'pb_endpoint';
 const runtimeHost = typeof window !== 'undefined' ? window.location.hostname : '';
 // Temporary public fallback for the current deployment.
-// Replace this with a stable hosted PocketBase URL or VITE_PB_ENDPOINT as soon as possible.
-const PUBLIC_FALLBACK_ENDPOINT = 'https://ultimate-bride-methodology-bench.trycloudflare.com';
+// Removed unstable trycloudflare fallback to avoid DNS errors in production.
+// Replace this with a stable hosted PocketBase URL or set `VITE_PB_ENDPOINT`.
+const PUBLIC_FALLBACK_ENDPOINT = '';
 
 function isLocalHost(value = '') {
   const normalized = `${value || ''}`.trim().toLowerCase();
