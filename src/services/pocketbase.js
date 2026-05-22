@@ -79,6 +79,7 @@ async function pickEndpoint() {
     typeof window !== 'undefined'
       ? normalize(localStorage.getItem(STORAGE_KEY) || '', '')
       : '';
+  const configured = normalize(DEFAULT_CANDIDATES[0] || '', '');
   const candidates = [...DEFAULT_CANDIDATES, saved]
     .filter(Boolean)
     .map((value) => normalize(value, ''))
@@ -98,8 +99,16 @@ async function pickEndpoint() {
   }
 
   if (!selected) {
-    selected = saved || normalize(DEFAULT_CANDIDATES[0] || '', '');
-    healthy = selected ? false : null;
+    if (configured) {
+      selected = configured;
+      healthy = false;
+    } else {
+      if (saved && typeof window !== 'undefined') {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      selected = '';
+      healthy = null;
+    }
   }
 
   if (selected && typeof window !== 'undefined') {
