@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import MainBottomNav from '../components/MainBottomNav.jsx';
 import { fetchMentors } from '../services/homeData.js';
 import {
+  buildConversationId,
   formatSummaryTime,
-  subscribeUserChats,
+  subscribeParticipantChats,
 } from '../services/mentorChatService.js';
-import { useAuth } from '../state/auth.jsx';
+import { resolveAuthRole, useAuth } from '../state/auth.jsx';
 
 const BackIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden>
@@ -61,19 +62,29 @@ const ChatCheck = ({ seen }) => (
   </svg>
 );
 
-function mergeMentorsWithChats(mentors, summaries) {
-  const byMentorId = new Map(
-    (summaries || []).map((item) => [item.mentorId, item])
-  );
-  const byName = new Map(
-    (summaries || []).map((item) => [item.mentorName.trim().toLowerCase(), item])
-  );
+function buildChatList(mentors, summaries, role) {
+  if (role === 'instructor') {
+    return (summaries || []).map((summary) => ({
+      id: summary.userId || summary.conversationId,
+      conversationId: summary.conversationId,
+      name: summary.userName || summary.mentorName || 'Student',
+      role: summary.userName ? 'Student' : 'Student',
+      imagePath: summary.userImagePath || summary.mentorImagePath || '',
+      message: summary.lastMessage || 'Tap to continue the conversation',
+      time: summary.lastMessageAt ? formatSummaryTime(summary.lastMessageAt) : '',
+      unread: summary.lastMessageFromUser && !summary.lastSeenByMentor ? 1 : 0,
+      active: summary.activeForMentor || false,
+      lastFromUser: summary.lastMessageFromUser || false,
+      seen: summary.lastSeenByMentor ?? true,
+      hasRealChat: Boolean(summary.lastMessage?.trim()),
+      userId: summary.userId,
+      mentorId: summary.mentorId,
+    }));
+  }
 
-  const merged = (mentors || []).map((mentor) => {
-    const summary =
-      byMentorId.get(mentor.id) ||
-      byName.get(`${mentor.name || ''}`.trim().toLowerCase()) ||
-      null;
+  const summaryMap = new Map((summaries || []).map((item) => [item.mentorId, item]));
+  return (mentors || []).map((mentor) => {
+    const summary = summaryMap.get(mentor.id) || null;
     return {
       id: mentor.id,
       conversationId: summary?.conversationId || '',
@@ -86,34 +97,16 @@ function mergeMentorsWithChats(mentors, summaries) {
       active: summary?.activeForMentor || false,
       lastFromUser: summary?.lastMessageFromUser || false,
       seen: summary ? summary.lastSeenByMentor : true,
-      hasRealChat: Boolean(summary?.lastMessage && summary.lastMessage.trim()),
+      hasRealChat: Boolean(summary?.lastMessage?.trim()),
+      mentorId: mentor.id,
     };
   });
-
-  for (const summary of summaries || []) {
-    const exists = merged.some((item) => item.id === summary.mentorId);
-    if (exists) continue;
-    merged.push({
-      id: summary.mentorId || summary.conversationId,
-      conversationId: summary.conversationId,
-      name: summary.mentorName || 'Mentor',
-      role: summary.mentorRole || 'Mentor',
-      imagePath: summary.mentorImagePath || '',
-      message: summary.lastMessage || 'Tap to start chat',
-      time: summary.lastMessageAt ? formatSummaryTime(summary.lastMessageAt) : '',
-      unread: summary.unreadForUser || 0,
-      active: summary.activeForMentor || false,
-      lastFromUser: summary.lastMessageFromUser || false,
-      seen: summary.lastSeenByMentor ?? true,
-      hasRealChat: Boolean(summary.lastMessage && summary.lastMessage.trim()),
-    });
-  }
-  return merged;
 }
 
 export default function MentorChats() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
+  const role = resolveAuthRole(profile, user);
   const [mentors, setMentors] = useState([]);
   const [summaries, setSummaries] = useState([]);
 
@@ -126,30 +119,44 @@ export default function MentorChats() {
       setSummaries([]);
       return () => {};
     }
-    const unsubscribe = subscribeUserChats(
+
+    const unsubscribe = subscribeParticipantChats(
       user.uid,
+      role,
       (items) => setSummaries(items || []),
       () => {}
     );
-    return unsubscribe;
-  }, [user?.uid]);
 
-  const chats = useMemo(() => mergeMentorsWithChats(mentors, summaries), [mentors, summaries]);
+    return unsubscribe;
+  }, [role, user?.uid]);
+
+  const chats = useMemo(() => buildChatList(mentors, summaries, role), [mentors, summaries, role]);
   const recentChats = useMemo(
     () => chats.filter((item) => item.hasRealChat && item.time),
     [chats]
   );
 
   const openThread = (chat) => {
+    const conversationId = chat.conversationId || buildConversationId({
+      userId: user.uid,
+      mentorId: chat.mentorId || chat.id,
+    });
+
     navigate('/mentor-chat-thread', {
       state: {
-        mentorId: chat.id,
-        name: chat.name,
-        role: chat.role,
-        imagePath: chat.imagePath,
+        conversationId,
+        participantId: chat.id,
+        participantName: chat.name,
+        participantRole: chat.role,
+        participantImagePath: chat.imagePath,
+        mentorId: role === 'instructor' ? user.uid : chat.id,
+        userName: role === 'instructor' ? chat.name : undefined,
       },
     });
   };
+
+  const headerTitle = role === 'instructor' ? 'Student Conversations' : 'Mentor Chats';
+  const sectionTitle = role === 'instructor' ? 'Students' : 'Mentors';
 
   return (
     <div className="chats-page">
@@ -162,7 +169,7 @@ export default function MentorChats() {
           >
             <BackIcon />
           </button>
-          <h2>Mentor Chats</h2>
+          <h2>{headerTitle}</h2>
           <button type="button" className="chats-icon">
             <MoreIcon />
           </button>
@@ -171,11 +178,12 @@ export default function MentorChats() {
           <button type="button" className="chats-tab" onClick={() => navigate('/indox')}>
             Indox
           </button>
-          <button type="button" className="chats-tab active">Mentor Chats</button>
+          <button type="button" className="chats-tab active">{headerTitle}</button>
           <button type="button" className="chats-tab" onClick={() => navigate('/support-chats')}>
             Admin Support
           </button>
         </div>
+
         <div className="chats-section">
           {recentChats.length > 0 ? <h3>Recent Chats</h3> : null}
           {recentChats.map((chat) => (
@@ -197,21 +205,23 @@ export default function MentorChats() {
                   </span>
                 </div>
                 <div className="chat-row chat-row--sub">
-                  {chat.lastFromUser ? (
-                    <ChatCheck seen={chat.seen} />
-                  ) : null}
+                  {chat.lastFromUser ? <ChatCheck seen={chat.seen} /> : null}
                   <span className="chat-message">{chat.message}</span>
-                  {chat.unread ? (
-                    <span className="chat-unread">{chat.unread}</span>
-                  ) : null}
+                  {chat.unread ? <span className="chat-unread">{chat.unread}</span> : null}
                 </div>
                 <span className="chat-role">{chat.role}</span>
               </div>
             </button>
           ))}
+          {recentChats.length === 0 ? (
+            <div className="empty-state" style={{ padding: '24px 0', color: '#7d8190', fontWeight: 600 }}>
+              No recent conversations yet. Start by tapping a mentor or student to send the first message.
+            </div>
+          ) : null}
         </div>
+
         <div className="chats-section">
-          <h3>Mentors</h3>
+          <h3>{sectionTitle}</h3>
           {chats.map((chat) => (
             <button
               key={`mentor-${chat.id}`}
@@ -231,15 +241,11 @@ export default function MentorChats() {
                   </span>
                 </div>
                 <div className="chat-row chat-row--sub">
-                  {chat.lastFromUser ? (
-                    <ChatCheck seen={chat.seen} />
-                  ) : null}
+                  {chat.lastFromUser ? <ChatCheck seen={chat.seen} /> : null}
                   <span className="chat-message">
                     {chat.message || 'Tap to start chat'}
                   </span>
-                  {chat.unread ? (
-                    <span className="chat-unread">{chat.unread}</span>
-                  ) : null}
+                  {chat.unread ? <span className="chat-unread">{chat.unread}</span> : null}
                 </div>
                 <span className="chat-role">{chat.role}</span>
               </div>

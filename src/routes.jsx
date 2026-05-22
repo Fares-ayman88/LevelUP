@@ -51,7 +51,6 @@ import LessonPlayer from './pages/LessonPlayer.jsx';
 import AdminCourses from './pages/AdminCourses.jsx';
 import AdminTransactions from './pages/AdminTransactions.jsx';
 import InstructorRequests from './pages/InstructorRequests.jsx';
-import InstructorDashboard from './pages/InstructorDashboard.jsx';
 import InstructorRegistration from './pages/InstructorRegistration.jsx';
 import InstructorDocuments from './pages/InstructorDocuments.jsx';
 import MentorCourses from './pages/MentorCourses.jsx';
@@ -113,7 +112,6 @@ export const routeConfig = [
   { path: '/admin-courses', title: 'Admin Courses', component: AdminCourses, roles: ['admin'] },
   { path: '/admin-transactions', title: 'Admin Transactions', component: AdminTransactions, roles: ['admin'] },
   { path: '/instructor-requests', title: 'Instructor Requests', component: InstructorRequests, roles: ['admin'] },
-  { path: '/instructor-dashboard', title: 'Instructor Dashboard', component: InstructorDashboard, roles: ['instructor'] },
   { path: '/instructor-registration', title: 'Instructor Registration', component: InstructorRegistration },
   { path: '/instructor-documents', title: 'Instructor Documents', component: InstructorDocuments },
   { path: '/mentor-courses', title: 'Mentor Courses', component: MentorCourses, roles: ['instructor'] },

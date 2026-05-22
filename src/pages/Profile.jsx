@@ -78,12 +78,12 @@ export default function Profile() {
   const instructorCard = useMemo(() => {
     if (role === 'instructor') {
       return {
-        title: 'Instructor Workspace',
-        body: 'Your instructor access is active. Manage your courses, students, and earnings from the dashboard.',
+        title: 'Instructor Tools',
+        body: 'Your instructor access is active. Manage your courses, students, and earnings from the mentor tools.',
         badge: 'Approved',
-        action: 'Open Dashboard',
+        action: 'Open Course Manager',
         tone: 'approved',
-        route: '/instructor-dashboard',
+        route: '/mentor-courses',
       };
     }
 
