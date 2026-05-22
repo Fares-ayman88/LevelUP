@@ -1,0 +1,53 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "levelup",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "emulator-5554",
+      "env": {
+        "ANDROID_HOME": "D:\\Android\\Sdk",
+        "ANDROID_SDK_ROOT": "D:\\Android\\Sdk",
+        "PATH": "D:\\Android\\Sdk\\platform-tools;${env:PATH}"
+      },
+      "toolArgs": [
+        "--no-dds",
+        "--device-timeout",
+        "120"
+      ]
+    },
+    {
+      "name": "levelup (safe emulator)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "emulator-5554",
+      "env": {
+        "ANDROID_HOME": "D:\\Android\\Sdk",
+        "ANDROID_SDK_ROOT": "D:\\Android\\Sdk",
+        "PATH": "D:\\Android\\Sdk\\platform-tools;${env:PATH}"
+      },
+      "toolArgs": [
+        "--no-dds",
+        "--device-timeout",
+        "120",
+        "--enable-software-rendering"
+      ]
+    },
+    {
+      "name": "levelup (profile mode)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "levelup (release mode)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release"
+    }
+  ]
+}

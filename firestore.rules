@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == "bxUt8FTGqTSx0rwdD4nusNKk9gY2" ||
+        (
+          request.auth.token.email != null &&
+          request.auth.token.email.matches(
+            "^(sa3doon|fares|mahmoud)@(levelup\\.admin|levelup\\.app)$"
+          )
+        ) ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+        )
+      );
+    }
+
+    function isInstructor() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "instructor";
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() &&
+        (request.auth.uid == userId || isAdmin());
+    }
+
+    match /mentors/{mentorId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() ||
+        (isSignedIn() && request.auth.uid == mentorId);
+    }
+
+    match /instructor_requests/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update, read: if isSignedIn() &&
+        (request.auth.uid == userId || isAdmin());
+    }
+
+    match /support_chats/{chatId} {
+      allow read, write: if isAdmin() ||
+        (isSignedIn() && request.auth.uid == chatId);
+
+      match /messages/{messageId} {
+        allow read, create: if isAdmin() ||
+          (isSignedIn() && request.auth.uid == chatId);
+      }
+    }
+
+    match /mentor_follows/{followId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /course_reviews/{reviewId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() > 0 &&
+        request.resource.data.rating is number;
+      // Any signed-in user can update likes state on existing reviews.
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /mentor_chats/{chatId} {
+      allow read: if isSignedIn() &&
+        (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() &&
+        (isAdmin() || request.resource.data.userId == request.auth.uid);
+      allow update: if isSignedIn() &&
+        (isAdmin() || resource.data.userId == request.auth.uid);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() &&
+          (isAdmin() ||
+            get(/databases/$(database)/documents/mentor_chats/$(chatId)).data.userId == request.auth.uid);
+        allow create: if isSignedIn() &&
+          (isAdmin() ||
+            (
+              get(/databases/$(database)/documents/mentor_chats/$(chatId)).data.userId == request.auth.uid &&
+              request.resource.data.senderId == request.auth.uid
+            ));
+        allow update: if isSignedIn() &&
+          (isAdmin() ||
+            get(/databases/$(database)/documents/mentor_chats/$(chatId)).data.userId == request.auth.uid);
+        allow delete: if false;
+      }
+    }
+
+    match /transactions/{transactionId} {
+      // Student submits a payment request for self only, and only as waiting.
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == "waiting";
+
+      // User sees own transactions, admin sees all, instructor sees own mentor sales.
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        (isInstructor() && resource.data.mentorId == request.auth.uid)
+      );
+
+      // Only admin can approve/reject/update payment status.
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+  }
+}
