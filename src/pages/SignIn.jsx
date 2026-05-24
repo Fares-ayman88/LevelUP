@@ -14,8 +14,10 @@ import {
   signInStaticAdmin,
   signInWithEmail,
   signInWithGoogle,
+  signInWithGoogleCredential,
   signOut as signOutCurrentUser,
 } from '../state/auth.jsx';
+import { GOOGLE_CLIENT_ID } from '../services/levelupApi.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,8 +28,10 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleButtonReady, setGoogleButtonReady] = useState(false);
   const consumedRouteState = useRef(false);
   const consumedGoogleRedirect = useRef(false);
+  const googleButtonRef = useRef(null);
   const normalizedEmail = email.trim();
   const canUseForgotPassword = EMAIL_PATTERN.test(normalizedEmail);
 
@@ -198,6 +202,57 @@ export default function SignIn() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!GOOGLE_CLIENT_ID || !googleButtonRef.current) return undefined;
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+      return undefined;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (!cancelled) renderGoogleButton();
+    };
+    document.head.appendChild(script);
+
+    function renderGoogleButton() {
+      if (!googleButtonRef.current || !window.google?.accounts?.id) return;
+      googleButtonRef.current.innerHTML = '';
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (response) => {
+          if (!response?.credential || loading) return;
+          setLoading(true);
+          try {
+            const result = await signInWithGoogleCredential(response.credential);
+            await handleSuccess(result);
+          } catch (error) {
+            toast.error(getAuthErrorMessage(error));
+          } finally {
+            setLoading(false);
+          }
+        },
+      });
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        shape: 'rectangular',
+        logo_alignment: 'center',
+        width: 420,
+      });
+      setGoogleButtonReady(true);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="app-shell auth-shell">
       <MainBottomNav mode="auth" />
@@ -299,12 +354,14 @@ export default function SignIn() {
                 <div className="auth-divider auth-divider--fancy">Or Continue With</div>
 
                 <div className="auth-socials">
+                  <div ref={googleButtonRef} className="auth-google-rendered" />
                   <button
                     type="button"
                     className="auth-google-btn"
                     onClick={handleGoogle}
                     aria-label="Sign in with Google"
                     disabled={loading}
+                    hidden={googleButtonReady}
                   >
                     <span className="auth-google-btn__content">
                       <img

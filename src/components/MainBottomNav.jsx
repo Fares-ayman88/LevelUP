@@ -147,7 +147,7 @@ function MainBottomNav({ currentIndex, mode = 'main', showSearch = false }) {
       await signOut();
       navigate('/sign-in', { replace: true });
     } catch {
-      // Keep the current session if Firebase cannot sign out.
+      // Keep the current session if the backend cannot sign out cleanly.
     }
   };
 

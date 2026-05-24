@@ -1,33 +1,5 @@
-import { getPocketBase } from './pocketbase.js';
+import levelupApi from './levelupApi.js';
 
-/**
- * Notification Service
- * Handles all notification-related API calls and demo data fallback
- * @module notificationService
- */
-
-function getPb() {
-  const pb = getPocketBase();
-  if (!pb) {
-    throw new Error('PocketBase not initialized');
-  }
-  return pb;
-}
-
-function getPocketBaseInstance() {
-  try {
-    return getPocketBase();
-  } catch {
-    return null;
-  }
-}
-
-function isDevMode() {
-  const pb = getPocketBaseInstance();
-  return import.meta.env.DEV || !pb?.authStore?.isValid;
-}
-
-// Demo notifications for development/testing
 const DEMO_NOTIFICATIONS = [
   {
     id: '1',
@@ -45,69 +17,41 @@ const DEMO_NOTIFICATIONS = [
     icon: '/assets/notifications/Circle.svg',
     created: new Date(Date.now() - 2 * 3600000).toISOString(),
   },
-  {
-    id: '3',
-    title: "Today's Special Offers",
-    message: 'Your payment has been successfully processed',
-    isRead: true,
-    icon: '/assets/notifications/Circle.svg',
-    created: new Date(Date.now() - 4 * 3600000).toISOString(),
-  },
-  {
-    id: '4',
-    title: 'Mentor Replied',
-    message: 'Your question got a helpful response from the instructor',
-    isRead: false,
-    icon: '/assets/notifications/Circle.svg',
-    created: new Date(Date.now() - 6 * 3600000).toISOString(),
-  },
-  {
-    id: '5',
-    title: 'Credit Card Connected',
-    message: 'Your payment method has been successfully linked',
-    isRead: true,
-    icon: '/assets/notifications/Circle.svg',
-    created: new Date(Date.now() - 24 * 3600000).toISOString(),
-  },
 ];
 
-// Fetch all notifications for current user
+function mapNotification(item = {}) {
+  return {
+    ...item,
+    isRead: item.isRead === true || item.isRead === 1,
+    created: item.created || item.createdAt || new Date().toISOString(),
+  };
+}
+
 export async function fetchNotifications(options = {}) {
-  if (isDevMode()) {
-    const page = options.page || 1;
-    const limit = options.limit || 50;
-    const start = (page - 1) * limit;
-    const end = start + limit;
-
+  if (!levelupApi.token) {
     return {
-      items: DEMO_NOTIFICATIONS.slice(start, end),
-      totalPages: Math.ceil(DEMO_NOTIFICATIONS.length / limit),
-      totalItems: DEMO_NOTIFICATIONS.length,
+      items: [],
+      totalPages: 1,
+      totalItems: 0,
     };
   }
-
   try {
-    const response = await getPb().collection('notifications').getList(
-      options.page || 1,
-      options.limit || 50,
-      {
-        sort: '-created',
-        filter: options.filter || '',
-        ...options.query,
-      },
-    );
-
-    return {
-      items: response.items || [],
-      totalPages: response.totalPages,
-      totalItems: response.totalItems,
-    };
-  } catch (error) {
+    const response = await levelupApi.notifications.list();
+    const all = (response.items || []).map(mapNotification);
     const page = options.page || 1;
     const limit = options.limit || 50;
     const start = (page - 1) * limit;
     const end = start + limit;
-
+    return {
+      items: all.slice(start, end),
+      totalPages: Math.max(1, Math.ceil(all.length / limit)),
+      totalItems: all.length,
+    };
+  } catch {
+    const page = options.page || 1;
+    const limit = options.limit || 50;
+    const start = (page - 1) * limit;
+    const end = start + limit;
     return {
       items: DEMO_NOTIFICATIONS.slice(start, end),
       totalPages: Math.ceil(DEMO_NOTIFICATIONS.length / limit),
@@ -116,109 +60,53 @@ export async function fetchNotifications(options = {}) {
   }
 }
 
-// Get unread notification count
 export async function getUnreadCount() {
-  if (isDevMode()) {
-    return DEMO_NOTIFICATIONS.filter((n) => !n.isRead).length;
-  }
-
-  try {
-    const response = await getPb().collection('notifications').getFullList({
-      filter: 'isRead = false',
-      fields: 'id',
-    });
-    return response.length;
-  } catch {
-    return DEMO_NOTIFICATIONS.filter((n) => !n.isRead).length;
-  }
+  const response = await fetchNotifications({ page: 1, limit: 200 });
+  return response.items.filter((n) => !n.isRead).length;
 }
 
-// Mark notification as read
 export async function markAsRead(notificationId) {
-  if (isDevMode()) {
-    const notif = DEMO_NOTIFICATIONS.find((n) => n.id === notificationId);
-    if (notif) {
-      notif.isRead = true;
-    }
-    return notif;
-  }
-
+  if (!levelupApi.token) return null;
   try {
-    const notification = await getPb()
-      .collection('notifications')
-      .update(notificationId, { isRead: true });
-    return notification;
+    const response = await levelupApi.notifications.markRead(notificationId);
+    return mapNotification(response.item);
   } catch {
     const notif = DEMO_NOTIFICATIONS.find((n) => n.id === notificationId);
-    if (notif) {
-      notif.isRead = true;
-    }
+    if (notif) notif.isRead = true;
     return notif;
   }
 }
 
-// Mark all notifications as read
 export async function markAllAsRead() {
-  if (isDevMode()) {
-    DEMO_NOTIFICATIONS.forEach((n) => {
-      n.isRead = true;
-    });
-    return true;
-  }
-
-  try {
-    const notifications = await getPb().collection('notifications').getFullList({
-      filter: 'isRead = false',
-    });
-
-    const updatePromises = notifications.map((notif) =>
-      getPb().collection('notifications').update(notif.id, { isRead: true }),
-    );
-
-    await Promise.all(updatePromises);
-    return true;
-  } catch {
-    DEMO_NOTIFICATIONS.forEach((n) => {
-      n.isRead = true;
-    });
-    return true;
-  }
+  const response = await fetchNotifications({ page: 1, limit: 200 });
+  await Promise.all(response.items.filter((n) => !n.isRead).map((n) => markAsRead(n.id)));
+  return true;
 }
 
-// Delete notification
 export async function deleteNotification(notificationId) {
-  if (isDevMode()) {
-    const index = DEMO_NOTIFICATIONS.findIndex((n) => n.id === notificationId);
-    if (index > -1) {
-      DEMO_NOTIFICATIONS.splice(index, 1);
-    }
-    return true;
-  }
-
+  if (!levelupApi.token) return true;
   try {
-    await getPb().collection('notifications').delete(notificationId);
+    await levelupApi.notifications.remove(notificationId);
     return true;
   } catch {
     const index = DEMO_NOTIFICATIONS.findIndex((n) => n.id === notificationId);
-    if (index > -1) {
-      DEMO_NOTIFICATIONS.splice(index, 1);
-    }
+    if (index > -1) DEMO_NOTIFICATIONS.splice(index, 1);
     return true;
   }
 }
 
-// Subscribe to real-time updates
 export function subscribeToNotifications(callback) {
-  if (isDevMode()) {
-    return () => {};
-  }
-
-  try {
-    const unsubscribe = getPb().collection('notifications').subscribe('*', (e) => {
-      callback(e);
-    });
-    return unsubscribe;
-  } catch {
-    return () => {};
-  }
+  if (!levelupApi.token) return () => {};
+  let closed = false;
+  const emit = async () => {
+    if (closed) return;
+    const data = await fetchNotifications({ page: 1, limit: 50 });
+    callback({ action: 'refresh', items: data.items });
+  };
+  emit();
+  const timer = setInterval(emit, 10000);
+  return () => {
+    closed = true;
+    clearInterval(timer);
+  };
 }

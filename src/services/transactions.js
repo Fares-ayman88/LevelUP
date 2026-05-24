@@ -1,15 +1,4 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-} from 'firebase/firestore';
-
-import { auth, db } from './firebase.js';
+import levelupApi from './levelupApi.js';
 import { showGlobalLoading, withGlobalLoading } from './globalLoading.js';
 
 const STORAGE_KEY = 'levelup_transactions_v1';
@@ -209,25 +198,27 @@ export function saveStoredTransactions(list) {
 export async function addTransaction(payload) {
   return withGlobalLoading(async () => {
     ensureLocalLoaded();
-    const user = auth?.currentUser || null;
+    const me = await levelupApi.me().catch(() => null);
+    const user = me?.user
+      ? {
+          uid: me.user.uid || me.user.id,
+          email: me.user.email,
+          displayName: me.user.name || me.user.displayName,
+        }
+      : null;
     const item = {
       id: `tx_${Date.now()}`,
       ...buildPayload(payload, user),
     };
 
-    if (!db || !user?.uid) {
+    if (!user?.uid) {
       upsertCache(item);
       return item;
     }
 
     try {
-      const created = await addDoc(collection(db, 'transactions'), {
-        ...item,
-        status: STATUS.waiting,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      const saved = { ...item, id: created.id };
+      const response = await levelupApi.transactions.create(item);
+      const saved = response.item || item;
       upsertCache(saved);
       return saved;
     } catch {
@@ -256,18 +247,9 @@ export async function updateTransactionStatus(id, status) {
 
     replaceCache(next);
 
-    if (db) {
-      try {
-        await setDoc(
-          doc(db, 'transactions', transactionId),
-          {
-            status: normalizedStatus,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      } catch {}
-    }
+    try {
+      await levelupApi.transactions.updateStatus(transactionId, normalizedStatus);
+    } catch {}
     return updated;
   }, 'Updating transaction...');
 }
@@ -305,39 +287,23 @@ export function subscribeTransactions(
     settleInitialLoad();
   };
 
-  if (!db || !auth?.currentUser) {
-    emitMerged(getAllTransactions());
-    return () => {};
-  }
-
-  const currentUid = auth.currentUser.uid;
-  let q;
-  if (role === 'admin') {
-    q = query(collection(db, 'transactions'));
-  } else if (role === 'instructor') {
-    const resolvedMentorId = `${mentorId || currentUid}`.trim();
-    q = query(collection(db, 'transactions'), where('mentorId', '==', resolvedMentorId));
-  } else {
-    const resolvedUserId = `${userId || currentUid}`.trim();
-    q = query(collection(db, 'transactions'), where('userId', '==', resolvedUserId));
-  }
-
-  const unsubscribe = onSnapshot(
-    q,
-    (snapshot) => {
-      const remoteItems = snapshot.docs.map((docItem) => mapFirestoreDoc(docItem));
-      emitMerged(remoteItems);
-    },
-    (error) => {
+  const load = async () => {
+    try {
+      const response = await levelupApi.transactions.list({ role, userId, mentorId });
+      emitMerged(response.items || []);
+    } catch (error) {
       settleInitialLoad();
       if (onError) onError(error);
       emitMerged(getAllTransactions());
     }
-  );
+  };
+
+  load();
+  const timer = setInterval(load, 10000);
 
   return () => {
     settleInitialLoad();
-    unsubscribe();
+    clearInterval(timer);
   };
 }
 

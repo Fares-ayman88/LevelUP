@@ -3,6 +3,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/levelup/:path*",
+      "destination": "/api/levelup?path=:path*"
+    },
+    {
+      "source": "/api/chat",
+      "destination": "/api/chat"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -33,6 +33,8 @@ migrate_working_dir/
 /build/
 /coverage/
 server/gemini-proxy/.env
+server/levelup-api/*.sqlite3
+server/levelup-api/uploads/
 
 # Symbolication related
 app.*.symbols

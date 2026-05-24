@@ -1,8 +1,5 @@
-import { collection, getDocs } from 'firebase/firestore';
-
-import { auth, db } from './firebase.js';
 import { withGlobalLoading } from './globalLoading.js';
-import { getPocketBase, hasPocketBaseEndpoint } from './pocketbase.js';
+import levelupApi from './levelupApi.js';
 import { seedCourses } from '../data/seedCourses.js';
 import { seedMentors } from '../data/seedMentors.js';
 import { seedCategories } from '../data/seedCategories.js';
@@ -222,6 +219,11 @@ async function uploadLessonVideos(pb, { record, sections, uploads = [], onProgre
 
 function resolveFileUrl(pb, record, value) {
   if (!value) return '';
+  if (!pb?.files) {
+    if (typeof value === 'string') return value.trim();
+    if (Array.isArray(value)) return `${value[0] || ''}`.trim();
+    return '';
+  }
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (!trimmed) return '';
@@ -400,13 +402,7 @@ function normalizeMentorFromFirestore(doc) {
 }
 
 async function fetchFirestoreMentors() {
-  if (!auth?.currentUser || !db) return [];
-  try {
-    const snapshot = await getDocs(collection(db, 'mentors'));
-    return snapshot.docs.map((docItem) => normalizeMentorFromFirestore(docItem));
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 function mergeFirestoreMentors(base, fromFirestore) {
@@ -528,13 +524,10 @@ export function buildCategories(courses) {
 
 export async function fetchCourses() {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      return applySavedMarks(orderFeaturedCourses(seedCourses.slice()));
-    }
     try {
-      const records = await pb.collection(COURSE_COLLECTION).getFullList({ sort: '-created' });
-      const mapped = records.map((record) => mapCourse(pb, record));
+      const response = await levelupApi.courses.list();
+      const records = response.items || [];
+      const mapped = records.map((record) => mapCourse(null, record));
       const source = mapped.length ? mapped : seedCourses.slice();
       const ordered = orderFeaturedCourses(source);
       return applySavedMarks(ordered);
@@ -546,21 +539,14 @@ export async function fetchCourses() {
 
 export async function fetchMentors() {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      const firestoreMentors = await fetchFirestoreMentors();
-      const merged = mergeFirestoreMentors(seedMentors.slice(), firestoreMentors);
-      return orderFeaturedMentors(dedupeMentorsByName(merged));
-    }
     try {
-      const [records, firestoreMentors, overlays] = await Promise.all([
-        pb.collection(MENTOR_COLLECTION).getFullList({ sort: '-created' }),
-        fetchFirestoreMentors(),
-        fetchProfileImageOverlays(pb),
-      ]);
+      const response = await levelupApi.mentors.list();
+      const records = response.items || [];
+      const firestoreMentors = await fetchFirestoreMentors();
+      const overlays = {};
 
       const mapped = records
-        .map((record) => mapMentor(pb, record))
+        .map((record) => mapMentor(null, record))
         .filter((mentor) => mentor.category.trim() !== '__profile__');
       const withFirestore = mergeFirestoreMentors(mapped, firestoreMentors);
       const withOverlays = applyProfileImageOverlays(withFirestore, overlays);
@@ -586,31 +572,8 @@ export async function subscribeCourses(onChange, onError) {
     courseInvalidationSubscribers,
     onChange
   );
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  let unsubscribeRealtime = () => {};
-  if (!pb) {
-    return () => {
-      unsubscribeInvalidation();
-    };
-  }
-  try {
-    const unsubscribe = await pb.collection(COURSE_COLLECTION).subscribe('*', () => {
-      onChange?.();
-    });
-    unsubscribeRealtime = () => {
-      try {
-        unsubscribe?.();
-      } catch {
-        // no-op
-      }
-    };
-  } catch (error) {
-    onError?.(error);
-  }
-
   return () => {
     unsubscribeInvalidation();
-    unsubscribeRealtime();
   };
 }
 
@@ -619,31 +582,8 @@ export async function subscribeMentors(onChange, onError) {
     mentorInvalidationSubscribers,
     onChange
   );
-  const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-  let unsubscribeRealtime = () => {};
-  if (!pb) {
-    return () => {
-      unsubscribeInvalidation();
-    };
-  }
-  try {
-    const unsubscribe = await pb.collection(MENTOR_COLLECTION).subscribe('*', () => {
-      onChange?.();
-    });
-    unsubscribeRealtime = () => {
-      try {
-        unsubscribe?.();
-      } catch {
-        // no-op
-      }
-    };
-  } catch (error) {
-    onError?.(error);
-  }
-
   return () => {
     unsubscribeInvalidation();
-    unsubscribeRealtime();
   };
 }
 
@@ -652,27 +592,9 @@ export async function createCourse(
   { coverImageFile, lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
     const payload = sanitizeCoursePayload(course);
-    if (coverImageFile) payload.coverImage = coverImageFile;
-    let created = await pb.collection(COURSE_COLLECTION).create(payload);
-
-    if (Array.isArray(lessonVideoUploads) && lessonVideoUploads.length > 0) {
-      const updatedSections = await uploadLessonVideos(pb, {
-        record: created,
-        sections: payload.sections,
-        uploads: lessonVideoUploads,
-        onProgress: onLessonUploadProgress,
-      });
-      created = await pb.collection(COURSE_COLLECTION).update(created.id, {
-        sections: updatedSections,
-      });
-    }
-
-    const mapped = mapCourse(pb, created);
+    const response = await levelupApi.courses.create(payload);
+    const mapped = mapCourse(null, response.item);
     invalidateCoursesQuery();
     return mapped;
   }, 'Saving course...');
@@ -684,30 +606,9 @@ export async function updateCourse(
   { coverImageFile, previousCoverUrl = '', lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
     const payload = sanitizeCoursePayload(course);
-    if (coverImageFile) payload.coverImage = coverImageFile;
-    if (!coverImageFile && !payload.coverImageUrl && `${previousCoverUrl || ''}`.trim()) {
-      payload.coverImage = null;
-    }
-    let updated = await pb.collection(COURSE_COLLECTION).update(courseId, payload);
-
-    if (Array.isArray(lessonVideoUploads) && lessonVideoUploads.length > 0) {
-      const updatedSections = await uploadLessonVideos(pb, {
-        record: updated,
-        sections: payload.sections,
-        uploads: lessonVideoUploads,
-        onProgress: onLessonUploadProgress,
-      });
-      updated = await pb.collection(COURSE_COLLECTION).update(courseId, {
-        sections: updatedSections,
-      });
-    }
-
-    const mapped = mapCourse(pb, updated);
+    const response = await levelupApi.courses.update(courseId, payload);
+    const mapped = mapCourse(null, response.item);
     invalidateCoursesQuery();
     return mapped;
   }, 'Updating course...');
@@ -715,25 +616,16 @@ export async function updateCourse(
 
 export async function deleteCourse(courseId) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
-    await pb.collection(COURSE_COLLECTION).delete(courseId);
+    await levelupApi.courses.remove(courseId);
     invalidateCoursesQuery();
   }, 'Deleting course...');
 }
 
 export async function createMentor(mentor, { imageFile } = {}) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
     const payload = sanitizeMentorPayload(mentor);
-    if (imageFile) payload.image = imageFile;
-    const created = await pb.collection(MENTOR_COLLECTION).create(payload);
-    const mapped = mapMentor(pb, created);
+    const response = await levelupApi.mentors.create(payload);
+    const mapped = mapMentor(null, response.item);
     invalidateMentorsQuery();
     return mapped;
   }, 'Saving mentor...');
@@ -741,14 +633,9 @@ export async function createMentor(mentor, { imageFile } = {}) {
 
 export async function updateMentor(mentorId, mentor, { imageFile } = {}) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
     const payload = sanitizeMentorPayload(mentor);
-    if (imageFile) payload.image = imageFile;
-    const updated = await pb.collection(MENTOR_COLLECTION).update(mentorId, payload);
-    const mapped = mapMentor(pb, updated);
+    const response = await levelupApi.mentors.update(mentorId, payload);
+    const mapped = mapMentor(null, response.item);
     invalidateMentorsQuery();
     return mapped;
   }, 'Updating mentor...');
@@ -756,23 +643,15 @@ export async function updateMentor(mentorId, mentor, { imageFile } = {}) {
 
 export async function deleteMentor(mentorId) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
-    await pb.collection(MENTOR_COLLECTION).delete(mentorId);
+    await levelupApi.mentors.remove(mentorId);
     invalidateMentorsQuery();
   }, 'Deleting mentor...');
 }
 
 export async function saveCourseFeaturedOrder(orderedCourses = []) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
     const tasks = orderedCourses.map((course, index) =>
-      pb.collection(COURSE_COLLECTION).update(course.id, { featuredRank: index + 1 })
+      levelupApi.courses.update(course.id, { featuredRank: index + 1 })
     );
     await Promise.all(tasks);
     invalidateCoursesQuery();
@@ -781,12 +660,8 @@ export async function saveCourseFeaturedOrder(orderedCourses = []) {
 
 export async function saveMentorFeaturedOrder(orderedMentors = []) {
   return withGlobalLoading(async () => {
-    const pb = hasPocketBaseEndpoint() ? getPocketBase() : null;
-    if (!pb) {
-      throw new Error('PocketBase is not configured for production writes.');
-    }
     const tasks = orderedMentors.map((mentor, index) =>
-      pb.collection(MENTOR_COLLECTION).update(mentor.id, { featuredRank: index + 1 })
+      levelupApi.mentors.update(mentor.id, { featuredRank: index + 1 })
     );
     await Promise.all(tasks);
     invalidateMentorsQuery();

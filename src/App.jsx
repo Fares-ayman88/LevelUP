@@ -1,4 +1,3 @@
-﻿import { useEffect } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import EmailVerificationGate from './components/EmailVerificationGate.jsx';
@@ -8,14 +7,8 @@ import { routeConfig } from './routes.jsx';
 import Placeholder from './pages/Placeholder.jsx';
 import NotFound from './pages/NotFound.jsx';
 import RoleRoute from './components/RoleRoute.jsx';
-import { withGlobalLoading } from './services/globalLoading.js';
-import { initPocketBase } from './services/pocketbase.js';
 
 export default function App() {
-  useEffect(() => {
-    withGlobalLoading(() => initPocketBase(), 'Connecting services...').catch(() => {});
-  }, []);
-
   return (
     <ErrorBoundary>
       <EmailVerificationGate>

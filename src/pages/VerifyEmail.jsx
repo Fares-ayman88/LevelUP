@@ -14,11 +14,11 @@ import {
 
 const VERIFY_COOLDOWN_SECONDS = 30;
 const OTP_PATTERN = /^\d{6,8}$/;
-const SHOWCASE_CHIPS = ['PocketBase OTP', 'Inbox testing', 'Safer password accounts'];
+const SHOWCASE_CHIPS = ['Local OTP', 'Inbox testing', 'Safer password accounts'];
 const SHOWCASE_METRICS = [
   { value: '30s', label: 'Resend cooldown' },
   { value: '1', label: 'Code to enter' },
-  { value: '0', label: 'Firebase mail links' },
+  { value: '0', label: 'external mail links' },
 ];
 
 function getCodeValidationMessage(value) {
@@ -143,7 +143,7 @@ export default function VerifyEmail() {
       subtitle="Enter the one-time code from your email so password-based accounts can continue securely."
       showcaseEyebrow="Account Security"
       showcaseTitle="Verify once, then continue without friction."
-      showcaseSubtitle="This web flow now uses PocketBase OTP instead of Firebase mail links, so we can compare inbox placement and keep the verification step inside the same polished auth journey."
+      showcaseSubtitle="This web flow now uses the LevelUp backend, so verification can stay inside the same polished auth journey without external auth services."
       showcaseChips={SHOWCASE_CHIPS}
       showcaseMetrics={SHOWCASE_METRICS}
     >
@@ -168,7 +168,7 @@ export default function VerifyEmail() {
                 <div>
                   <strong>Sign in again to continue verification</strong>
                   <p>
-                    We need an active session to connect the PocketBase verification code to your LevelUp account.
+                    We need an active session to connect the verification code to your LevelUp account.
                   </p>
                 </div>
               </div>
@@ -203,7 +203,7 @@ export default function VerifyEmail() {
                 <span className="material-icons-round forgot-reset-panel__usecase-icon" aria-hidden>shield</span>
                 <div>
                   <strong>What changed?</strong>
-                  <p>The web app now uses PocketBase OTP instead of Firebase verification links for this flow.</p>
+                  <p>The web app now uses the LevelUp backend for this flow.</p>
                 </div>
               </article>
             </aside>
@@ -283,7 +283,7 @@ export default function VerifyEmail() {
                   <span className="material-icons-round" aria-hidden>verified_user</span>
                   <div>
                     <strong>Trying to improve deliverability</strong>
-                    <p>This flow is ready for PocketBase SMTP testing so we can compare inbox placement against Firebase.</p>
+                    <p>This flow is ready for the LevelUp backend mail service when SMTP is configured.</p>
                   </div>
                 </article>
                 <article className="forgot-reset-panel__help-item">

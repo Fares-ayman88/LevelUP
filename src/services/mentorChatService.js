@@ -1,7 +1,4 @@
-import { getPocketBase, hasPocketBaseEndpoint } from './pocketbase.js';
-
-const CHATS_COLLECTION = 'mentor_chats';
-const MESSAGES_COLLECTION = 'mentor_chat_messages';
+import levelupApi from './levelupApi.js';
 
 function toInt(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
@@ -47,41 +44,16 @@ function normalizeKey(value = '') {
   return normalized || 'unknown';
 }
 
-function previewText(text = '') {
-  const trimmed = text.toString().trim();
-  if (trimmed.length <= 60) return trimmed;
-  return `${trimmed.substring(0, 60)}...`;
-}
-
 function sortByLatest(items = []) {
-  const copy = items.slice();
-  copy.sort((left, right) => {
+  return items.slice().sort((left, right) => {
     const a = left.lastMessageAt ? left.lastMessageAt.getTime() : 0;
     const b = right.lastMessageAt ? right.lastMessageAt.getTime() : 0;
     return b - a;
   });
-  return copy;
 }
 
 function sortByCreated(items = []) {
-  const copy = items.slice();
-  copy.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
-  return copy;
-}
-
-function quoteFilter(value = '') {
-  return JSON.stringify(`${value || ''}`);
-}
-
-function getPbInstance() {
-  if (!hasPocketBaseEndpoint()) {
-    throw new Error('PocketBase is not configured.');
-  }
-  const pb = getPocketBase();
-  if (!pb) {
-    throw new Error('PocketBase is not initialized.');
-  }
-  return pb;
+  return items.slice().sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
 }
 
 function mapSummary(record = {}) {
@@ -96,7 +68,7 @@ function mapSummary(record = {}) {
     userName: `${record.userName || ''}`.trim(),
     userImagePath: `${record.userImagePath || ''}`.trim(),
     lastMessage: `${record.lastMessage || ''}`.trim(),
-    lastMessageAt: toNullableDate(record.lastMessageAt || record.updated || record.created),
+    lastMessageAt: toNullableDate(record.lastMessageAt || record.updatedAt || record.createdAt),
     lastMessageFromUser: toBool(record.lastMessageFromUser),
     lastSeenByMentor: toBool(record.lastSeenByMentor, true),
     activeForMentor: toBool(record.activeForMentor),
@@ -115,31 +87,22 @@ function mapMessage(record = {}) {
   };
 }
 
-async function getConversationRecord(conversationId) {
-  const key = `${conversationId || ''}`.trim();
-  if (!key) return null;
-  const pb = getPbInstance();
-  const records = await pb.collection(CHATS_COLLECTION).getFullList({
-    filter: `conversationKey = ${quoteFilter(key)}`,
-    limit: 1,
-  });
-  return records.length ? records[0] : null;
-}
-
-async function fetchMessages(conversationId) {
-  const key = `${conversationId || ''}`.trim();
-  if (!key) return [];
-  const pb = getPbInstance();
-  const records = await pb.collection(MESSAGES_COLLECTION).getFullList({
-    filter: `conversationKey = ${quoteFilter(key)}`,
-    sort: 'createdAt',
-  });
-  return sortByCreated(records.map(mapMessage));
-}
-
-async function fetchConversationSummary(conversationId) {
-  const record = await getConversationRecord(conversationId);
-  return record ? mapSummary(record) : null;
+function poll(loader, onData, onError) {
+  let closed = false;
+  const emit = async () => {
+    try {
+      const data = await loader();
+      if (!closed) onData?.(data);
+    } catch (error) {
+      if (!closed) onError?.(error);
+    }
+  };
+  emit();
+  const timer = setInterval(emit, 5000);
+  return () => {
+    closed = true;
+    clearInterval(timer);
+  };
 }
 
 export function buildConversationId({ userId, mentorId }) {
@@ -148,100 +111,38 @@ export function buildConversationId({ userId, mentorId }) {
 
 export function subscribeParticipantChats(participantId, role, onData, onError) {
   const id = `${participantId || ''}`.trim();
-  if (!id || !hasPocketBaseEndpoint()) {
+  if (!id) {
     onData?.([]);
     return () => {};
   }
-
-  const pb = getPbInstance();
-  const filterKey = role === 'instructor' ? 'mentorId' : 'userId';
-
-  const emit = async () => {
-    try {
-      const records = await pb.collection(CHATS_COLLECTION).getFullList({
-        filter: `${filterKey} = ${quoteFilter(id)}`,
-        sort: '-lastMessageAt',
-      });
-      onData?.(sortByLatest(records.map(mapSummary)));
-    } catch (error) {
-      onError?.(error);
-    }
-  };
-
-  emit().catch((error) => onError?.(error));
-
-  const unsubscribe = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
-    const record = event?.record || {};
-    const matches = `${record[filterKey] || ''}`.trim() === id;
-    if (!matches) return;
-    await emit();
-  });
-
-  return () => {
-    if (typeof unsubscribe === 'function') unsubscribe();
-  };
+  return poll(async () => {
+    const response = await levelupApi.chats.list({ participantId: id, role });
+    return sortByLatest((response.items || []).map(mapSummary));
+  }, onData, onError);
 }
 
 export function subscribeMessages(conversationId, onData, onError) {
   const key = `${conversationId || ''}`.trim();
-  if (!key || !hasPocketBaseEndpoint()) {
+  if (!key) {
     onData?.([]);
     return () => {};
   }
-
-  const pb = getPbInstance();
-
-  const emit = async () => {
-    try {
-      const items = await fetchMessages(key);
-      onData?.(items);
-    } catch (error) {
-      onError?.(error);
-    }
-  };
-
-  emit().catch((error) => onError?.(error));
-
-  const unsubscribe = pb.collection(MESSAGES_COLLECTION).subscribe('*', async (event) => {
-    const record = event?.record || {};
-    if (`${record.conversationKey || ''}`.trim() !== key) return;
-    await emit();
-  });
-
-  return () => {
-    if (typeof unsubscribe === 'function') unsubscribe();
-  };
+  return poll(async () => {
+    const response = await levelupApi.chats.messages(key);
+    return sortByCreated((response.items || []).map(mapMessage));
+  }, onData, onError);
 }
 
 export function subscribeConversationSummary(conversationId, onData, onError) {
   const key = `${conversationId || ''}`.trim();
-  if (!key || !hasPocketBaseEndpoint()) {
+  if (!key) {
     onData?.(null);
     return () => {};
   }
-
-  const pb = getPbInstance();
-
-  const emit = async () => {
-    try {
-      const summary = await fetchConversationSummary(key);
-      onData?.(summary);
-    } catch (error) {
-      onError?.(error);
-    }
-  };
-
-  emit().catch((error) => onError?.(error));
-
-  const unsubscribe = pb.collection(CHATS_COLLECTION).subscribe('*', async (event) => {
-    const record = event?.record || {};
-    if (`${record.conversationKey || ''}`.trim() !== key) return;
-    await emit();
-  });
-
-  return () => {
-    if (typeof unsubscribe === 'function') unsubscribe();
-  };
+  return poll(async () => {
+    const response = await levelupApi.chats.list();
+    return (response.items || []).map(mapSummary).find((item) => item.conversationId === key) || null;
+  }, onData, onError);
 }
 
 export async function ensureConversation({
@@ -258,37 +159,17 @@ export async function ensureConversation({
   const uid = `${userId || ''}`.trim();
   const mid = `${mentorId || ''}`.trim();
   if (!key || !uid || !mid) return null;
-
-  const now = new Date().toISOString();
-  const pb = getPbInstance();
-  const existing = await getConversationRecord(key);
-  const payload = {
+  const response = await levelupApi.chats.ensure({
     conversationKey: key,
     userId: uid,
     mentorId: mid,
-    mentorName: `${mentorName || ''}`.trim() || 'Mentor',
-    mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
-    mentorImagePath: `${mentorImagePath || ''}`.trim(),
-    userName: `${userName || ''}`.trim(),
-    userImagePath: `${userImagePath || ''}`.trim(),
-    updated: now,
-  };
-
-  if (!existing) {
-    return pb.collection(CHATS_COLLECTION).create({
-      ...payload,
-      lastMessage: '',
-      lastMessageAt: now,
-      lastMessageFromUser: false,
-      lastSeenByMentor: true,
-      activeForMentor: false,
-      unreadForUser: 0,
-      lastUserMessageId: '',
-      created: now,
-    });
-  }
-
-  return pb.collection(CHATS_COLLECTION).update(existing.id, payload);
+    mentorName,
+    mentorRole,
+    mentorImagePath,
+    userName,
+    userImagePath,
+  });
+  return response.item;
 }
 
 export async function sendText({
@@ -308,9 +189,7 @@ export async function sendText({
   const mid = `${mentorId || ''}`.trim();
   const trimmed = `${text || ''}`.trim();
   if (!key || !uid || !mid || !trimmed) return;
-
-  const pb = getPbInstance();
-  const chatRecord = await ensureConversation({
+  await ensureConversation({
     conversationId: key,
     userId: uid,
     mentorId: mid,
@@ -320,87 +199,27 @@ export async function sendText({
     userName,
     userImagePath,
   });
-  if (!chatRecord || !chatRecord.id) return;
-
-  const now = new Date().toISOString();
-  const isUserSender = senderRole === 'user';
-  const messageRecord = await pb.collection(MESSAGES_COLLECTION).create({
-    chatId: key,
-    conversationKey: key,
-    senderRole: senderRole || 'mentor',
-    senderId: isUserSender ? uid : mid,
+  await levelupApi.chats.sendMessage(key, {
+    senderRole,
+    senderId: senderRole === 'user' ? uid : mid,
     text: trimmed,
-    seenByMentor: isUserSender ? false : true,
-    createdAt: now,
-  });
-
-  const unreadForUser = isUserSender ? 0 : toInt(chatRecord.unreadForUser || 0) + 1;
-
-  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
-    conversationKey: key,
-    userId: uid,
-    mentorId: mid,
-    mentorName: `${mentorName || ''}`.trim() || 'Mentor',
-    mentorRole: `${mentorRole || ''}`.trim() || 'Mentor',
-    mentorImagePath: `${mentorImagePath || ''}`.trim(),
-    userName: `${userName || ''}`.trim(),
-    userImagePath: `${userImagePath || ''}`.trim(),
-    lastMessage: previewText(trimmed),
-    lastMessageAt: now,
-    lastMessageFromUser: isUserSender,
-    lastSeenByMentor: isUserSender ? false : true,
-    activeForMentor: true,
-    unreadForUser,
-    lastUserMessageId: messageRecord.id,
-    updated: now,
   });
 }
 
 export async function markMentorSeen(conversationId) {
   const key = `${conversationId || ''}`.trim();
   if (!key) return;
-  const pb = getPbInstance();
-  const chatRecord = await getConversationRecord(key);
-  if (!chatRecord || !chatRecord.id) return;
-
-  const lastUserMessageId = `${chatRecord.lastUserMessageId || ''}`.trim();
-  if (lastUserMessageId) {
-    await pb.collection(MESSAGES_COLLECTION).update(lastUserMessageId, {
-      seenByMentor: true,
-    });
-  }
-
-  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
-    lastSeenByMentor: true,
-    activeForMentor: true,
-    updated: new Date().toISOString(),
-  });
+  await levelupApi.chats.markRead(key);
 }
 
-export async function setMentorActive(conversationId, active) {
-  const key = `${conversationId || ''}`.trim();
-  if (!key) return;
-  const pb = getPbInstance();
-  const chatRecord = await getConversationRecord(key);
-  if (!chatRecord || !chatRecord.id) return;
-
-  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
-    activeForMentor: Boolean(active),
-    updated: new Date().toISOString(),
-  });
+export async function setMentorActive() {
+  return undefined;
 }
 
 export async function markReadForUser(conversationId) {
   const key = `${conversationId || ''}`.trim();
   if (!key) return;
-  const pb = getPbInstance();
-  const chatRecord = await getConversationRecord(key);
-  if (!chatRecord || !chatRecord.id) return;
-
-  await pb.collection(CHATS_COLLECTION).update(chatRecord.id, {
-    unreadForUser: 0,
-    updated: new Date().toISOString(),
-  });
+  await levelupApi.chats.markRead(key);
 }
 
 export function formatMessageTime(value) {

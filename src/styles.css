@@ -10,6 +10,16 @@
   width: 100%;
 }
 
+.auth-form--login .auth-google-rendered {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.auth-form--login .auth-google-rendered:empty {
+  display: none;
+}
+
 .auth-form--login .auth-google-btn {
   width: 100%;
   min-height: 48px;

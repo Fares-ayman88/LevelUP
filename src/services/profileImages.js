@@ -1,6 +1,4 @@
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-
-import { storage } from './firebase.js';
+import levelupApi from './levelupApi.js';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -14,8 +12,16 @@ function extensionFor(file) {
   return 'jpg';
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(`${reader.result || ''}`);
+    reader.onerror = () => reject(reader.error || new Error('File read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function uploadProfileImage(user, file) {
-  if (!storage) throw new Error('Firebase Storage is not configured.');
   const uid = `${user?.uid || ''}`.trim();
   if (!uid) throw new Error('Sign in before changing your profile photo.');
   if (!file) throw new Error('Choose a profile photo first.');
@@ -27,12 +33,15 @@ export async function uploadProfileImage(user, file) {
   }
 
   const ext = extensionFor(file);
-  const imageRef = ref(storage, `profile-images/${uid}/${Date.now()}.${ext}`);
-  const snapshot = await uploadBytes(imageRef, file, {
+  const data = await fileToDataUrl(file);
+  const response = await levelupApi.uploadBase64({
+    filename: `profile-${uid}-${Date.now()}.${ext}`,
     contentType: file.type || 'image/jpeg',
-    customMetadata: {
-      owner: uid,
-    },
+    data,
   });
-  return getDownloadURL(snapshot.ref);
+  const url = `${response.url || ''}`.trim();
+  if (!url) throw new Error('Upload failed.');
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/')) return url;
+  return `${levelupApi.baseUrl}${url}`;
 }
