@@ -1,0 +1,78 @@
+services:
+  - type: web
+    runtime: docker
+    name: levelup-auth-api
+    region: frankfurt
+    dockerfilePath: ./server/auth-api/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: commit
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_VERSION
+        value: v1
+      - key: CLIENT_URL
+        sync: false
+      - key: CLIENT_URLS
+        sync: false
+      - key: COOKIE_DOMAIN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_REFRESH_TTL
+        value: 30d
+      - key: ACCESS_COOKIE_NAME
+        value: levelup_access
+      - key: REFRESH_COOKIE_NAME
+        value: levelup_refresh
+      - key: BCRYPT_ROUNDS
+        value: 12
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX
+        value: 300
+      - key: UPLOAD_RATE_LIMIT_WINDOW_MS
+        value: 3600000
+      - key: UPLOAD_RATE_LIMIT_MAX
+        value: 10
+      - key: CSRF_ENABLED
+        value: true
+      - key: CSRF_COOKIE_NAME
+        value: levelup_csrf
+      - key: CSRF_HEADER_NAME
+        value: x-csrf-token
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_VIDEO_FOLDER
+        value: levelup/videos
+      - key: CLOUDINARY_SIGNED_URL_TTL_SECONDS
+        value: 900
+      - key: CLOUDINARY_UPLOAD_CHUNK_SIZE_MB
+        value: 20
+      - key: UPLOAD_TEMP_DIR
+        value: tmp/uploads
+      - key: MAX_VIDEO_SIZE_MB
+        value: 1024
+      - key: ALLOWED_VIDEO_MIME_TYPES
+        value: video/mp4,video/webm,video/quicktime

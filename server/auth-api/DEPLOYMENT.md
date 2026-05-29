@@ -78,6 +78,59 @@ curl http://YOUR_SERVER/api/v1/health
 curl http://YOUR_SERVER/api/v1/ready
 ```
 
+## 4.1 Render Deployment
+
+The repo includes a Render Blueprint at:
+
+```txt
+render.yaml
+```
+
+Render's Blueprint docs support Docker services with `dockerfilePath` and `dockerContext`, which is what this monorepo uses.
+
+Steps:
+
+1. Open Render Dashboard.
+2. Choose **Blueprints**.
+3. Connect `Fares-ayman88/LevelUP`.
+4. Select the root `render.yaml`.
+5. Fill every environment variable marked `sync: false`.
+6. Deploy.
+
+Required Render secrets:
+
+```txt
+CLIENT_URL=https://level-up-steel.vercel.app
+CLIENT_URLS=https://level-up-steel.vercel.app
+MONGODB_URI=mongodb+srv://...
+JWT_ACCESS_SECRET=...
+JWT_REFRESH_SECRET=...
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+```
+
+After Render gives you a URL like:
+
+```txt
+https://levelup-auth-api.onrender.com
+```
+
+test:
+
+```bash
+curl https://levelup-auth-api.onrender.com/api/v1/health
+curl https://levelup-auth-api.onrender.com/api/v1/ready
+```
+
+Then update the frontend environment on Vercel:
+
+```env
+VITE_LEVELUP_API_URL=https://levelup-auth-api.onrender.com/api/v1
+```
+
+Redeploy the Vercel frontend after changing this variable.
+
 View logs:
 
 ```bash
