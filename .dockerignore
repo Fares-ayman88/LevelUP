@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.github
+.vercel
+.env
+.env.*
+server/auth-api/.env
+server/auth-api/.env.production
+server/auth-api/tmp
+server/auth-api/logs
+server/pocketbase/pb_data
+server/pocketbase/pb_migrations
+server/pocketbase/pocketbase.exe
+*.log
