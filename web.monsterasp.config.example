@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <handlers>
+      <add name="httpPlatformHandler" path="*" verb="*" modules="httpPlatformHandler" resourceType="Unspecified" />
+    </handlers>
+
+    <httpPlatform processPath="node" arguments=".\monsterasp.server.js" startupTimeLimit="60" stdoutLogEnabled="true" stdoutLogFile=".\logs\node">
+      <environmentVariables>
+        <environmentVariable name="PORT" value="%HTTP_PLATFORM_PORT%" />
+        <environmentVariable name="NODE_ENV" value="production" />
+        <environmentVariable name="API_VERSION" value="v1" />
+
+        <environmentVariable name="CLIENT_URL" value="https://level-up-steel.vercel.app" />
+        <environmentVariable name="CLIENT_URLS" value="https://level-up-steel.vercel.app" />
+        <environmentVariable name="COOKIE_DOMAIN" value="" />
+
+        <environmentVariable name="MONGODB_URI" value="mongodb+srv://USER:PASSWORD@cluster0.example.mongodb.net/levelup?retryWrites=true&amp;w=majority&amp;appName=Cluster0" />
+
+        <environmentVariable name="JWT_ACCESS_SECRET" value="CHANGE_ME_LONG_RANDOM_SECRET" />
+        <environmentVariable name="JWT_REFRESH_SECRET" value="CHANGE_ME_ANOTHER_LONG_RANDOM_SECRET" />
+        <environmentVariable name="JWT_ACCESS_TTL" value="15m" />
+        <environmentVariable name="JWT_REFRESH_TTL" value="30d" />
+        <environmentVariable name="ACCESS_COOKIE_NAME" value="levelup_access" />
+        <environmentVariable name="REFRESH_COOKIE_NAME" value="levelup_refresh" />
+
+        <environmentVariable name="BCRYPT_ROUNDS" value="12" />
+        <environmentVariable name="PASSWORD_RESET_TTL_MINUTES" value="15" />
+        <environmentVariable name="EMAIL_VERIFICATION_TTL_HOURS" value="24" />
+
+        <environmentVariable name="RATE_LIMIT_WINDOW_MS" value="900000" />
+        <environmentVariable name="RATE_LIMIT_MAX" value="300" />
+        <environmentVariable name="UPLOAD_RATE_LIMIT_WINDOW_MS" value="3600000" />
+        <environmentVariable name="UPLOAD_RATE_LIMIT_MAX" value="10" />
+
+        <environmentVariable name="CSRF_ENABLED" value="true" />
+        <environmentVariable name="CSRF_COOKIE_NAME" value="levelup_csrf" />
+        <environmentVariable name="CSRF_HEADER_NAME" value="x-csrf-token" />
+
+        <environmentVariable name="SMTP_HOST" value="" />
+        <environmentVariable name="SMTP_PORT" value="587" />
+        <environmentVariable name="SMTP_USER" value="" />
+        <environmentVariable name="SMTP_PASS" value="" />
+        <environmentVariable name="SMTP_FROM" value="" />
+
+        <environmentVariable name="CLOUDINARY_CLOUD_NAME" value="" />
+        <environmentVariable name="CLOUDINARY_API_KEY" value="" />
+        <environmentVariable name="CLOUDINARY_API_SECRET" value="" />
+        <environmentVariable name="CLOUDINARY_VIDEO_FOLDER" value="levelup/videos" />
+        <environmentVariable name="CLOUDINARY_SIGNED_URL_TTL_SECONDS" value="900" />
+        <environmentVariable name="CLOUDINARY_UPLOAD_CHUNK_SIZE_MB" value="20" />
+
+        <environmentVariable name="UPLOAD_TEMP_DIR" value="tmp/uploads" />
+        <environmentVariable name="MAX_VIDEO_SIZE_MB" value="1024" />
+        <environmentVariable name="ALLOWED_VIDEO_MIME_TYPES" value="video/mp4,video/webm,video/quicktime" />
+      </environmentVariables>
+    </httpPlatform>
+  </system.webServer>
+</configuration>

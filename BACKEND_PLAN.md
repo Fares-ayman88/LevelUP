@@ -488,6 +488,34 @@ Possible solutions:
 2. Use a VPS.
 3. Temporarily adapt backend to Vercel Serverless for non-video features.
 4. Use another hosting provider that accepts free deployment without card.
+5. Use MonsterASP for Node.js hosting and MongoDB Atlas as the external database.
+
+## MonsterASP Deployment Notes
+
+MonsterASP can run Node.js apps through `web.config` and `httpPlatformHandler`.
+
+Official docs say Node.js apps should be uploaded to `/wwwroot` with `web.config`, and `node_modules` must be uploaded because commands like `npm install` are not run on the server.
+
+Prepared files:
+
+```txt
+monsterasp.server.js
+web.monsterasp.config.example
+server/auth-api/DEPLOY_MONSTERASP.md
+```
+
+MonsterASP plan:
+
+```txt
+MonsterASP = Node.js Express backend
+MongoDB Atlas = external database
+Cloudinary = media storage
+Vercel = frontend
+```
+
+Important:
+
+The real production `web.config` contains secrets and should not be committed.
 
 ## Docker Deployment Files
 
@@ -653,4 +681,3 @@ MongoDB Atlas
 The backend code is built and pushed to GitHub.
 
 The remaining work is deployment and connecting the Vercel frontend to the deployed backend URL.
-

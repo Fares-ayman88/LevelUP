@@ -55,4 +55,6 @@ tatus
 .env
 .env.*
 !.env.example
+web.config
+!web.monsterasp.config.example
 .vercel
