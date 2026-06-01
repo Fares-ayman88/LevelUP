@@ -9,6 +9,10 @@ const DEFAULT_ADMINS = {
   fares: 'fares123',
   mahmoud: 'mahmoud123',
 };
+const MONSTERASP_API_BASE_URL = (
+  process.env.LEVELUP_BACKEND_URL ||
+  'http://fares-levelup-api.runasp.net/api/v1'
+).replace(/\/+$/, '');
 
 let sqlClient = null;
 let readyPromise = null;
@@ -36,6 +40,32 @@ function send(res, status, data) {
 
 function bad(res, message, status = 400) {
   send(res, status, { error: message });
+}
+
+async function proxyToMonsterAsp(req, res) {
+  const incomingUrl = new URL(req.url || '/api/levelup', `https://${req.headers.host || 'localhost'}`);
+  const cleanPath = incomingUrl.pathname.replace(/^\/api\/levelup\/?/, '');
+  const targetUrl = `${MONSTERASP_API_BASE_URL}${cleanPath ? `/${cleanPath}` : ''}${incomingUrl.search}`;
+  const headers = {
+    accept: req.headers.accept || 'application/json',
+    'content-type': req.headers['content-type'] || 'application/json',
+  };
+  if (req.headers.authorization) headers.authorization = req.headers.authorization;
+  if (req.headers.cookie) headers.cookie = req.headers.cookie;
+
+  const response = await fetch(targetUrl, {
+    method: req.method,
+    headers,
+    body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body || {}),
+  });
+
+  const text = await response.text();
+  res.status(response.status);
+  const contentType = response.headers.get('content-type') || 'application/json; charset=utf-8';
+  res.setHeader('Content-Type', contentType);
+  const setCookie = response.headers.get('set-cookie');
+  if (setCookie) res.setHeader('Set-Cookie', setCookie);
+  return res.send(text);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -683,6 +713,10 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
+    if (process.env.LEVELUP_USE_MONSTERASP !== 'false') {
+      return await proxyToMonsterAsp(req, res);
+    }
+
     await initDb();
     const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`);
     const parts = url.pathname.replace(/^\/api\/levelup\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);

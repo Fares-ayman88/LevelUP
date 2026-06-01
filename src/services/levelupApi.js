@@ -1,4 +1,6 @@
-const DEFAULT_API_BASE_URL = import.meta.env.PROD ? '/api/levelup' : 'http://127.0.0.1:8080';
+const DEFAULT_API_BASE_URL = import.meta.env.PROD
+  ? '/api/levelup'
+  : 'http://127.0.0.1:8080';
 const API_BASE_URL = (import.meta.env.VITE_LEVELUP_API_URL || DEFAULT_API_BASE_URL)
   .trim()
   .replace(/\/+$/, '');
@@ -47,6 +49,16 @@ async function request(path, { method = 'GET', body, headers = {}, auth = true }
   return data;
 }
 
+function normalizeApiResponse(response = {}) {
+  const data = response?.data && typeof response.data === 'object' ? response.data : response;
+  return {
+    ...response,
+    ...data,
+    token: data.accessToken || response.accessToken || response.token || '',
+    user: data.user || response.user || null,
+  };
+}
+
 export const levelupApi = {
   baseUrl: API_BASE_URL,
   get token() {
@@ -60,25 +72,25 @@ export const levelupApi = {
     return request('/health', { auth: false });
   },
   async signUp(payload) {
-    const data = await request('/auth/signup', { method: 'POST', body: payload, auth: false });
+    const data = normalizeApiResponse(await request('/auth/register', { method: 'POST', body: payload, auth: false }));
     setToken(data.token);
     return data;
   },
   async signIn(payload) {
-    const data = await request('/auth/signin', { method: 'POST', body: payload, auth: false });
+    const data = normalizeApiResponse(await request('/auth/login', { method: 'POST', body: payload, auth: false }));
     setToken(data.token);
     return data;
   },
   async signInWithGoogle(payload) {
-    const data = await request('/auth/google', { method: 'POST', body: payload, auth: false });
+    const data = normalizeApiResponse(await request('/auth/google', { method: 'POST', body: payload, auth: false }));
     setToken(data.token);
     return data;
   },
   me() {
-    return request('/auth/me');
+    return request('/auth/me').then(normalizeApiResponse);
   },
   updateProfile(payload) {
-    return request('/users/me', { method: 'PATCH', body: payload });
+    return request('/users/me', { method: 'PATCH', body: payload }).then(normalizeApiResponse);
   },
   uploadBase64(payload) {
     return request('/uploads/base64', { method: 'POST', body: payload });
