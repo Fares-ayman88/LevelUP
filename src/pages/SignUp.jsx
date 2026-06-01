@@ -50,7 +50,7 @@ export default function SignUp() {
     }
     setLoading(true);
     try {
-      const result = await signUpWithEmail(value, password);
+      const result = await signUpWithEmail(value, password, normalizedName);
       const uid = result?.user?.uid;
       if (uid) {
         try {

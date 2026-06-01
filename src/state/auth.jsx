@@ -231,9 +231,9 @@ export async function signInWithEmail(email, password) {
   }, 'Signing in...');
 }
 
-export async function signUpWithEmail(email, password) {
+export async function signUpWithEmail(email, password, name = '') {
   return withGlobalLoading(async () => {
-    const response = await levelupApi.signUp({ email, password });
+    const response = await levelupApi.signUp({ email, password, name });
     emitAuthChanged();
     return { user: toUser(response.user) };
   }, 'Creating account...');
