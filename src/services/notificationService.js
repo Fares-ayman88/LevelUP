@@ -47,7 +47,15 @@ export async function fetchNotifications(options = {}) {
       totalPages: Math.max(1, Math.ceil(all.length / limit)),
       totalItems: all.length,
     };
-  } catch {
+  } catch (error) {
+    if (error?.status === 401) {
+      levelupApi.clearToken();
+      return {
+        items: [],
+        totalPages: 1,
+        totalItems: 0,
+      };
+    }
     const page = options.page || 1;
     const limit = options.limit || 50;
     const start = (page - 1) * limit;
@@ -98,13 +106,19 @@ export async function deleteNotification(notificationId) {
 export function subscribeToNotifications(callback) {
   if (!levelupApi.token) return () => {};
   let closed = false;
+  let timer = null;
   const emit = async () => {
     if (closed) return;
+    if (!levelupApi.token) {
+      closed = true;
+      if (timer) clearInterval(timer);
+      return;
+    }
     const data = await fetchNotifications({ page: 1, limit: 50 });
     callback({ action: 'refresh', items: data.items });
   };
   emit();
-  const timer = setInterval(emit, 10000);
+  timer = setInterval(emit, 10000);
   return () => {
     closed = true;
     clearInterval(timer);

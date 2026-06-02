@@ -41,6 +41,9 @@ async function request(path, { method = 'GET', body, headers = {}, auth = true }
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) {
+      setToken('');
+    }
     const error = new Error(data?.error || `API request failed: ${response.status}`);
     error.status = response.status;
     error.data = data;
