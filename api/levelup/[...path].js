@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const DEFAULT_GOOGLE_CLIENT_ID = '617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com';
+const DEFAULT_GOOGLE_CLIENT_ID = '713417674505-2653e24s70ode9kc97661ojp0gjl168s.apps.googleusercontent.com';
 const DEFAULT_ADMINS = {
   sa3doon: 'sa3doon123',
   fares: 'fares123',

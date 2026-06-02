@@ -5,7 +5,7 @@ const API_BASE_URL = (import.meta.env.VITE_LEVELUP_API_URL || DEFAULT_API_BASE_U
   .trim()
   .replace(/\/+$/, '');
 export const GOOGLE_CLIENT_ID =
-  (import.meta.env.VITE_GOOGLE_CLIENT_ID || '617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com')
+  (import.meta.env.VITE_GOOGLE_CLIENT_ID || '713417674505-2653e24s70ode9kc97661ojp0gjl168s.apps.googleusercontent.com')
     .trim();
 
 const TOKEN_KEY = 'levelup_api_token';
