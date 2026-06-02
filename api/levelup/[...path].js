@@ -13,6 +13,16 @@ const MONSTERASP_API_BASE_URL = (
   process.env.LEVELUP_BACKEND_URL ||
   'http://fares-levelup-api.runasp.net/api/v1'
 ).replace(/\/+$/, '');
+const MONSTERASP_PROXY_ROOTS = new Set([
+  'health',
+  'ready',
+  'auth',
+  'courses',
+  'enrollments',
+  'videos',
+  'quizzes',
+  'quiz-attempts',
+]);
 
 let sqlClient = null;
 let readyPromise = null;
@@ -66,6 +76,17 @@ async function proxyToMonsterAsp(req, res) {
   const setCookie = response.headers.get('set-cookie');
   if (setCookie) res.setHeader('Set-Cookie', setCookie);
   return res.send(text);
+}
+
+function shouldProxyToMonsterAsp(req) {
+  if (process.env.LEVELUP_USE_MONSTERASP === 'false') return false;
+  const incomingUrl = new URL(req.url || '/api/levelup', `https://${req.headers.host || 'localhost'}`);
+  const firstPart = incomingUrl.pathname
+    .replace(/^\/api\/levelup\/?/, '')
+    .split('/')
+    .filter(Boolean)
+    .map(decodeURIComponent)[0] || 'health';
+  return MONSTERASP_PROXY_ROOTS.has(firstPart);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -713,7 +734,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    if (process.env.LEVELUP_USE_MONSTERASP !== 'false') {
+    if (shouldProxyToMonsterAsp(req)) {
       return await proxyToMonsterAsp(req, res);
     }
 
