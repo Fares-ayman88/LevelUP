@@ -209,6 +209,15 @@ export default function SignIn() {
       renderGoogleButton();
       return undefined;
     }
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => {
+        if (!cancelled) renderGoogleButton();
+      }, { once: true });
+      return () => {
+        cancelled = true;
+      };
+    }
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
