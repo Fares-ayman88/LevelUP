@@ -23,6 +23,13 @@ const MONSTERASP_PROXY_ROOTS = new Set([
   'quizzes',
   'quiz-attempts',
 ]);
+const LOCAL_FALLBACK_ROOTS = new Set([
+  'notifications',
+  'mentors',
+  'instructor-requests',
+  'chats',
+  'transactions',
+]);
 
 let sqlClient = null;
 let readyPromise = null;
@@ -776,6 +783,10 @@ export default async function handler(req, res) {
 
     if (shouldProxyToMonsterAsp(req)) {
       return await proxyToMonsterAsp(req, res);
+    }
+
+    if (LOCAL_FALLBACK_ROOTS.has(parts[0] || '')) {
+      return sendNoDatabaseFallback(req, res, parts);
     }
 
     if (!hasVercelDatabase()) {
