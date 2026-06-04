@@ -4,8 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Toast from '../components/Toast.jsx';
 
 const CONTACTS = [
-  { title: 'Admin WhatsApp 1', phone: '+201148822933', subtitle: 'Send your CV here' },
-  { title: 'Admin WhatsApp 2', phone: '+201094300987', subtitle: 'Backup WhatsApp contact' },
+  { title: 'Admin WhatsApp', phone: '+201026801309', subtitle: 'Send your CV here' },
 ];
 
 const sanitizePhone = (value = '') => value.replace(/\D/g, '');
