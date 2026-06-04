@@ -4,8 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Toast from '../components/Toast.jsx';
 
 const CONTACTS = [
-  { title: 'Admin WhatsApp 1', phone: '+201148822933', subtitle: 'CV, certificates, ID photo' },
-  { title: 'Admin WhatsApp 2', phone: '+201094300987', subtitle: 'CV, certificates, ID photo' },
+  { title: 'Admin WhatsApp 1', phone: '+201148822933', subtitle: 'Send your CV here' },
+  { title: 'Admin WhatsApp 2', phone: '+201094300987', subtitle: 'Backup WhatsApp contact' },
 ];
 
 const sanitizePhone = (value = '') => value.replace(/\D/g, '');
@@ -21,7 +21,7 @@ const buildMessage = (data) => {
   if (data.experienceYears) lines.push(`Experience: ${data.experienceYears} years`);
   if (data.coursesTaken) lines.push(`Courses: ${data.coursesTaken}`);
   if (data.notes) lines.push(`Notes: ${data.notes}`);
-  lines.push('Attached: CV, certificates, ID photo.');
+  lines.push('I will send my CV in this chat. Please review my application and contact me soon.');
   return lines.join('\n');
 };
 
@@ -39,6 +39,7 @@ export default function InstructorDocuments() {
       coursesTaken: '',
       experienceYears: '',
       notes: '',
+      submitted: false,
     };
   }, [location.state]);
 
@@ -59,14 +60,21 @@ export default function InstructorDocuments() {
           <button type="button" className="icon-btn" onClick={() => navigate(-1)}>
             <span className="material-icons-round icon-btn__arrow" aria-hidden>arrow_back</span>
           </button>
-          <h2>Submit Documents</h2>
+          <h2>Instructor Documents</h2>
         </div>
 
-        <h3>Send your documents via WhatsApp</h3>
-        <p className="muted">
-          Please send your CV, certificates, and a clear ID photo. You can include extra info about your
-          courses or experience.
-        </p>
+        <div className="summary-card">
+          <strong>
+            {data.submitted ? 'Application submitted successfully' : 'Send your CV via WhatsApp'}
+          </strong>
+          <p className="muted">
+            Please send your CV on WhatsApp. Our team will review your application and contact you soon.
+          </p>
+          <button type="button" className="primary-pill" onClick={() => handleOpen(CONTACTS[0])}>
+            <span>Send CV on WhatsApp</span>
+            <span className="primary-pill__arrow">&gt;</span>
+          </button>
+        </div>
 
         <div className="summary-card">
           <strong>Application Summary</strong>
@@ -98,7 +106,7 @@ export default function InstructorDocuments() {
             </div>
           ))}
         </div>
-        <p className="muted">Tip: If WhatsApp does not open, copy the phone number and send manually.</p>
+        <p className="muted">If WhatsApp does not open, copy the phone number and send your CV manually.</p>
       </div>
       <Toast message={message} onClose={() => setMessage('')} />
     </div>

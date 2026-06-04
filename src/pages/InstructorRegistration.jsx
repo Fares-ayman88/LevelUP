@@ -31,8 +31,7 @@ export default function InstructorRegistration() {
     }
     setLoading(true);
     try {
-      const request = await submitInstructorRequest({
-        user,
+      const submittedData = {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
@@ -40,8 +39,18 @@ export default function InstructorRegistration() {
         coursesTaken: coursesTaken.trim(),
         experienceYears: experience.trim(),
         notes: notes.trim(),
+      };
+      const request = await submitInstructorRequest({
+        user,
+        ...submittedData,
       });
-      navigate('/instructor-documents', { state: request || {} });
+      navigate('/instructor-documents', {
+        state: {
+          ...submittedData,
+          ...(request || {}),
+          submitted: true,
+        },
+      });
     } catch (error) {
       setMessage(error?.message || 'Failed to submit request.');
     } finally {
@@ -97,7 +106,9 @@ export default function InstructorRegistration() {
           <span>{loading ? 'Submitting...' : 'Submit Application'}</span>
           <span className="primary-pill__arrow">&gt;</span>
         </button>
-        <p className="muted">By submitting, you agree to our Instructor Terms.</p>
+        <p className="muted">
+          After submitting, send your CV on WhatsApp so the admin team can review your application.
+        </p>
       </div>
       <Toast message={message} onClose={() => setMessage('')} />
     </div>

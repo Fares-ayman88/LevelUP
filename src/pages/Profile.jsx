@@ -90,9 +90,9 @@ export default function Profile() {
     if (requestStatus === 'pending') {
       return {
         title: 'Instructor Request Submitted',
-        body: 'Your application is under review. Continue the flow by sending your CV, certificates, and ID photo to the admin team.',
+        body: 'Your application was submitted. Please send your CV on WhatsApp. Our team will review it and contact you soon.',
         badge: 'Pending Review',
-        action: 'Send Documents',
+        action: 'Send CV',
         tone: 'pending',
         route: '/instructor-documents',
       };
@@ -111,7 +111,7 @@ export default function Profile() {
 
     return {
       title: 'Become an Instructor',
-      body: 'Share your expertise on LevelUp. Submit your teaching details, then send your documents for admin approval.',
+      body: 'Share your expertise on LevelUp. Submit your teaching details, then send your CV on WhatsApp for admin review.',
       badge: 'Open Request',
       action: 'Request Instructor Access',
       tone: 'default',
