@@ -67,6 +67,15 @@ export function subscribeInstructorRequestForUser(userId, onData, onError) {
   return poll(async () => fetchInstructorRequestForUser(uid), onData, onError);
 }
 
+function buildGuestUserId(email, phone) {
+  const seed = `${email || phone || 'instructor'}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `guest_${seed || 'instructor'}`;
+}
+
 export async function submitInstructorRequest({
   user,
   name,
@@ -77,19 +86,19 @@ export async function submitInstructorRequest({
   experienceYears = '',
   notes = '',
 }) {
-  const uid = `${user?.uid || ''}`.trim();
-  if (!uid) throw new Error('Missing user id');
+  const normalizedEmail = `${email || ''}`.trim().toLowerCase();
+  const uid = `${user?.uid || buildGuestUserId(normalizedEmail, phone)}`.trim();
   const response = await levelupApi.instructorRequests.create({
     userId: uid,
     name,
-    email,
+    email: normalizedEmail,
     phone,
     category,
     coursesTaken,
     experienceYears,
     notes,
   });
-  return mapRequest(response.item);
+  return mapRequest(response.item || response);
 }
 
 export async function approveInstructorRequest(request) {

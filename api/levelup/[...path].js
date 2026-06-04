@@ -26,7 +26,6 @@ const MONSTERASP_PROXY_ROOTS = new Set([
 const LOCAL_FALLBACK_ROOTS = new Set([
   'notifications',
   'mentors',
-  'instructor-requests',
   'chats',
   'transactions',
 ]);
@@ -612,10 +611,23 @@ async function handleInstructorRequests(req, res, parts, query) {
     return send(res, 200, { items: rows.map((row) => ({ ...row.data, id: row.id, userId: row.user_id, status: row.status, requestedAt: row.requested_at, updatedAt: row.updated_at, resolvedAt: row.resolved_at })) });
   }
   if (req.method === 'POST') {
-    const user = await requireUser(req, res);
-    if (!user) return;
-    const userId = req.body?.userId || user.id;
-    const data = { ...req.body, userId, status: 'pending' };
+    const name = String(req.body?.name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const phone = String(req.body?.phone || '').trim();
+    const category = String(req.body?.category || '').trim();
+    const userId = String(req.body?.userId || '').trim();
+    if (!name || !email || !phone || !category || !userId) {
+      return bad(res, 'Missing required instructor application fields.');
+    }
+    const data = {
+      ...req.body,
+      userId,
+      name,
+      email,
+      phone,
+      category,
+      status: 'pending',
+    };
     const existing = await sql`select id from instructor_requests where user_id = ${userId} limit 1`;
     if (existing.length) {
       const rows = await sql`

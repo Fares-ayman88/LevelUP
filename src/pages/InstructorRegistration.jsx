@@ -21,25 +21,21 @@ export default function InstructorRegistration() {
 
   const handleSubmit = async () => {
     if (loading) return;
-    if (!user?.uid) {
-      setMessage('Please sign in first.');
-      return;
-    }
     if (!name.trim() || !email.trim() || !phone.trim() || !category.trim()) {
       setMessage('Please fill all required fields.');
       return;
     }
     setLoading(true);
+    const submittedData = {
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      category: category.trim(),
+      coursesTaken: coursesTaken.trim(),
+      experienceYears: experience.trim(),
+      notes: notes.trim(),
+    };
     try {
-      const submittedData = {
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        category: category.trim(),
-        coursesTaken: coursesTaken.trim(),
-        experienceYears: experience.trim(),
-        notes: notes.trim(),
-      };
       const request = await submitInstructorRequest({
         user,
         ...submittedData,
@@ -52,7 +48,14 @@ export default function InstructorRegistration() {
         },
       });
     } catch (error) {
-      setMessage(error?.message || 'Failed to submit request.');
+      console.warn('Instructor request could not be saved before WhatsApp handoff.', error);
+      navigate('/instructor-documents', {
+        state: {
+          ...submittedData,
+          submitted: true,
+          saveWarning: true,
+        },
+      });
     } finally {
       setLoading(false);
     }

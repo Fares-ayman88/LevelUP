@@ -148,7 +148,7 @@ export const levelupApi = {
       return request(`/instructor-requests${qs ? `?${qs}` : ''}`);
     },
     create(payload) {
-      return request('/instructor-requests', { method: 'POST', body: payload });
+      return request('/instructor-requests', { method: 'POST', body: payload, auth: false });
     },
     updateStatus(id, status) {
       return request(`/instructor-requests/${encodeURIComponent(id)}/status`, {
