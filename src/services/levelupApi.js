@@ -44,8 +44,9 @@ async function request(path, { method = 'GET', body, headers = {}, auth = true }
     if (response.status === 401) {
       setToken('');
     }
-    const error = new Error(data?.error || `API request failed: ${response.status}`);
+    const error = new Error(data?.message || data?.error || `API request failed: ${response.status}`);
     error.status = response.status;
+    error.code = data?.code || '';
     error.data = data;
     throw error;
   }

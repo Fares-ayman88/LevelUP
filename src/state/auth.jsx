@@ -167,6 +167,9 @@ export function resolveAuthRole(profile, user = null) {
 }
 
 export function getAuthErrorMessage(error) {
+  if (error?.code === 'ACCOUNT_NOT_FOUND') {
+    return 'Please sign up first';
+  }
   const message = `${error?.message || ''}`.trim();
   if (message) return message;
   return 'Authentication failed. Please try again.';
