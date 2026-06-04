@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import nodemailer from 'nodemailer';
 import path from 'node:path';
 
 const DEFAULT_GOOGLE_CLIENT_ID = '713417674505-2653e24s70ode9kc97661ojp0gjl168s.apps.googleusercontent.com';
@@ -48,6 +49,90 @@ function nowIso() {
 
 function makeId(prefix = '') {
   return `${prefix}${crypto.randomUUID().replace(/-/g, '')}`;
+}
+
+function makeGuestInstructorUserId(email) {
+  const digest = crypto.createHash('sha256').update(String(email || '').toLowerCase()).digest('hex');
+  return `guest_${digest.slice(0, 20)}`;
+}
+
+function getAdminEmail() {
+  return (
+    process.env.LEVELUP_ADMIN_EMAIL ||
+    process.env.ADMIN_EMAIL ||
+    process.env.SMTP_TO ||
+    process.env.SMTP_USER ||
+    ''
+  ).trim();
+}
+
+function hasSmtpConfig() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && getAdminEmail());
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildInstructorRequestEmail(item = {}) {
+  const rows = [
+    ['Name', item.name],
+    ['Email', item.email],
+    ['Phone', item.phone],
+    ['Category', item.category],
+    ['Courses Taken', item.coursesTaken],
+    ['Experience Years', item.experienceYears],
+    ['Notes', item.notes],
+    ['Request ID', item.id],
+    ['Status', item.status],
+  ];
+  const text = rows
+    .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim())
+    .map(([label, value]) => `${label}: ${value}`)
+    .join('\n');
+  const htmlRows = rows
+    .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim())
+    .map(([label, value]) => `<tr><th align="left" style="padding:8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(label)}</th><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(value)}</td></tr>`)
+    .join('');
+  return {
+    text,
+    html: `<div style="font-family:Arial,sans-serif;color:#111827;"><h2>New instructor application</h2><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:720px;">${htmlRows}</table></div>`,
+  };
+}
+
+async function notifyInstructorRequest(item) {
+  if (!hasSmtpConfig()) {
+    console.warn('Instructor request email skipped: SMTP is not configured.');
+    return;
+  }
+  try {
+    const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+    const content = buildInstructorRequestEmail(item);
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
+      to: getAdminEmail(),
+      replyTo: item.email || undefined,
+      subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
+      text: content.text,
+      html: content.html,
+    });
+  } catch (error) {
+    console.warn('Instructor request email failed:', error?.message || error);
+  }
 }
 
 function send(res, status, data) {
@@ -615,8 +700,8 @@ async function handleInstructorRequests(req, res, parts, query) {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const phone = String(req.body?.phone || '').trim();
     const category = String(req.body?.category || '').trim();
-    const userId = String(req.body?.userId || '').trim();
-    if (!name || !email || !phone || !category || !userId) {
+    const userId = String(req.body?.userId || '').trim() || makeGuestInstructorUserId(email);
+    if (!name || !email || !phone || !category) {
       return bad(res, 'Missing required instructor application fields.');
     }
     const data = {
@@ -635,14 +720,18 @@ async function handleInstructorRequests(req, res, parts, query) {
         where user_id = ${userId}
         returning *
       `;
-      return send(res, 200, { item: { ...rows[0].data, id: rows[0].id } });
+      const item = { ...rows[0].data, id: rows[0].id, userId, status: rows[0].status };
+      await notifyInstructorRequest(item);
+      return send(res, 200, { item });
     }
     const rows = await sql`
       insert into instructor_requests (id, user_id, data, status)
       values (${makeId('irq_')}, ${userId}, ${JSON.stringify(data)}, 'pending')
       returning *
     `;
-    return send(res, 201, { item: { ...rows[0].data, id: rows[0].id } });
+    const item = { ...rows[0].data, id: rows[0].id, userId, status: rows[0].status };
+    await notifyInstructorRequest(item);
+    return send(res, 201, { item });
   }
   if (req.method === 'PATCH' && id && parts[2] === 'status') {
     const admin = await requireAdminish(req, res);
