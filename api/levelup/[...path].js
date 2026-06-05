@@ -70,6 +70,42 @@ function hasSmtpConfig() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && getAdminEmail());
 }
 
+function maskEmail(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const match = raw.match(/<([^>]+)>/);
+  const email = (match?.[1] || raw).trim();
+  const [name, domain = ''] = email.split('@');
+
+  if (!domain) {
+    return raw.length <= 4 ? '****' : `${raw.slice(0, 2)}****${raw.slice(-2)}`;
+  }
+
+  return `${name.slice(0, 2)}***@${domain}`;
+}
+
+function getSmtpConfigStatus() {
+  const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
+  const from = process.env.SMTP_FROM || (process.env.SMTP_USER ? `LevelUp <${process.env.SMTP_USER}>` : '');
+
+  return {
+    configured: hasSmtpConfig(),
+    host: process.env.SMTP_HOST || '',
+    port,
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+    hasUser: Boolean(process.env.SMTP_USER),
+    user: maskEmail(process.env.SMTP_USER),
+    hasPass: Boolean(process.env.SMTP_PASS),
+    passLength: process.env.SMTP_PASS ? String(process.env.SMTP_PASS).length : 0,
+    hasAdminEmail: Boolean(getAdminEmail()),
+    adminEmail: maskEmail(getAdminEmail()),
+    hasFrom: Boolean(process.env.SMTP_FROM),
+    from: maskEmail(from),
+    deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
+  };
+}
+
 function escapeHtml(value = '') {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -105,31 +141,41 @@ function buildInstructorRequestEmail(item = {}) {
   };
 }
 
+function createSmtpTransporter() {
+  const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
+
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+async function sendInstructorRequestEmail(item) {
+  const transporter = createSmtpTransporter();
+  const content = buildInstructorRequestEmail(item);
+
+  return transporter.sendMail({
+    from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
+    to: getAdminEmail(),
+    replyTo: item.email || undefined,
+    subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
+    text: content.text,
+    html: content.html,
+  });
+}
+
 async function notifyInstructorRequest(item) {
   if (!hasSmtpConfig()) {
     console.warn('Instructor request email skipped: SMTP is not configured.');
     return;
   }
   try {
-    const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port,
-      secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-    const content = buildInstructorRequestEmail(item);
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
-      to: getAdminEmail(),
-      replyTo: item.email || undefined,
-      subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
-      text: content.text,
-      html: content.html,
-    });
+    await sendInstructorRequestEmail(item);
   } catch (error) {
     console.warn('Instructor request email failed:', error?.message || error);
   }
@@ -141,6 +187,65 @@ function send(res, status, data) {
 
 function bad(res, message, status = 400) {
   send(res, status, { error: message });
+}
+
+async function handleDebug(req, res, parts, query) {
+  if (req.method !== 'GET') return bad(res, 'Method not allowed.', 405);
+
+  if (parts[1] === 'smtp') {
+    return send(res, 200, getSmtpConfigStatus());
+  }
+
+  if (parts[1] === 'smtp-test') {
+    const expected = process.env.LEVELUP_EMAIL_TEST_SECRET || '';
+    const provided = String(query.secret || req.headers['x-levelup-test-secret'] || '');
+
+    if (!expected) return bad(res, 'LEVELUP_EMAIL_TEST_SECRET is not configured.', 503);
+    if (!provided || provided !== expected) return bad(res, 'Invalid email test secret.', 403);
+
+    if (!hasSmtpConfig()) {
+      return send(res, 503, {
+        ok: false,
+        error: 'SMTP is not fully configured.',
+        smtp: getSmtpConfigStatus(),
+      });
+    }
+
+    try {
+      const info = await sendInstructorRequestEmail({
+        id: makeId('debug_'),
+        name: 'SMTP Test',
+        email: getAdminEmail(),
+        phone: 'test',
+        category: 'diagnostic',
+        coursesTaken: 'Diagnostic SMTP email',
+        experienceYears: '0',
+        notes: 'This is a LevelUp SMTP test email.',
+        status: 'test',
+      });
+
+      return send(res, 200, {
+        ok: true,
+        result: {
+          messageId: info.messageId,
+          accepted: info.accepted || [],
+          rejected: info.rejected || [],
+          response: info.response || '',
+        },
+      });
+    } catch (error) {
+      return send(res, 500, {
+        ok: false,
+        error: error?.message || 'Email test failed.',
+        code: error?.code || null,
+        command: error?.command || null,
+        response: error?.response || null,
+        smtp: getSmtpConfigStatus(),
+      });
+    }
+  }
+
+  return bad(res, 'Not found.', 404);
 }
 
 function hasVercelDatabase() {
@@ -881,6 +986,10 @@ export default async function handler(req, res) {
     const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`);
     const parts = url.pathname.replace(/^\/api\/levelup\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
     const query = Object.fromEntries(url.searchParams.entries());
+
+    if (parts[0] === 'debug') {
+      return handleDebug(req, res, parts, query);
+    }
 
     if (shouldProxyToMonsterAsp(req)) {
       return await proxyToMonsterAsp(req, res);
