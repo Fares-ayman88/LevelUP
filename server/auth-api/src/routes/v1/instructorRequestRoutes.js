@@ -33,6 +33,7 @@ instructorRequestRoutes.get(
   instructorRequestController.list,
 );
 
+// Stats endpoint BEFORE :id to avoid matching stats as an ID
 instructorRequestRoutes.get(
   '/stats',
   authenticate,
