@@ -145,7 +145,7 @@ export const levelupApi = {
   instructorRequests: {
     list(params = {}) {
       const qs = new URLSearchParams(params).toString();
-      return request(`/instructor-requests${qs ? `?${qs}` : ''}`);
+      return request(`/instructor-requests${qs ? `?${qs}` : ''}`).then(normalizeApiResponse);
     },
     create(payload) {
       return request('/instructor-requests', { method: 'POST', body: payload, auth: false });
@@ -157,7 +157,7 @@ export const levelupApi = {
       });
     },
     stats() {
-      return request('/instructor-requests/stats');
+      return request('/instructor-requests/stats').then(normalizeApiResponse);
     },
   },
   notifications: {

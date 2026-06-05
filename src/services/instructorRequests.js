@@ -9,7 +9,7 @@ function toDate(value) {
 
 function mapRequest(item = {}) {
   return {
-    id: item.id,
+    id: item._id || item.id,
     userId: `${item.userId || item.id || ''}`.trim(),
     name: `${item.name || ''}`.trim(),
     email: `${item.email || ''}`.trim(),
