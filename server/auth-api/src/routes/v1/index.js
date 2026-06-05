@@ -4,6 +4,7 @@ import { authRoutes } from './authRoutes.js';
 import { courseRoutes, enrollmentRoutes } from './courseRoutes.js';
 import { videoRoutes } from './videoRoutes.js';
 import { quizRoutes } from './quizRoutes.js';
+import { instructorRequestRoutes } from './instructorRequestRoutes.js';
 import { authenticate } from '../../middlewares/authenticate.js';
 import { authorize } from '../../middlewares/authorize.js';
 import { ROLES } from '../../constants/roles.js';
@@ -31,6 +32,7 @@ v1Routes.get('/ready', (_req, res) => {
 v1Routes.use('/auth', authRoutes);
 v1Routes.use('/courses', courseRoutes);
 v1Routes.use('/enrollments', enrollmentRoutes);
+v1Routes.use('/instructor-requests', instructorRequestRoutes);
 v1Routes.use('/', videoRoutes);
 v1Routes.use('/', quizRoutes);
 

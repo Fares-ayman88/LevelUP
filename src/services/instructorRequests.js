@@ -21,13 +21,28 @@ function mapRequest(item = {}) {
     cvUrl: `${item.cvUrl || ''}`.trim(),
     idUrl: `${item.idUrl || ''}`.trim(),
     status: `${item.status || 'pending'}`.trim(),
-    requestedAt: toDate(item.requestedAt),
+    rejectionReason: `${item.rejectionReason || ''}`.trim(),
+    requestedAt: toDate(item.createdAt || item.requestedAt),
     updatedAt: toDate(item.updatedAt),
-    resolvedAt: toDate(item.resolvedAt),
+    approvedAt: toDate(item.approvedAt),
+    rejectedAt: toDate(item.rejectedAt),
   };
 }
 
-function poll(loader, onData, onError) {
+// Cache with TTL for instructor requests
+const cache = {
+  requests: null,
+  requestsExpiry: 0,
+  stats: null,
+  statsExpiry: 0,
+  TTL: 30000, // 30 seconds
+};
+
+function isCacheValid(expiry) {
+  return expiry > Date.now();
+}
+
+function poll(loader, onData, onError, interval = 10000) {
   let closed = false;
   const emit = async () => {
     try {
@@ -38,7 +53,7 @@ function poll(loader, onData, onError) {
     }
   };
   emit();
-  const timer = setInterval(emit, 10000);
+  const timer = setInterval(emit, interval);
   return () => {
     closed = true;
     clearInterval(timer);
@@ -58,8 +73,13 @@ export function subscribePendingInstructorRequests(onData, onError) {
 }
 
 export async function fetchInstructorRequestForUser(userId) {
-  const response = await levelupApi.instructorRequests.list();
-  return (response.items || []).map(mapRequest).find((item) => item.userId === `${userId || ''}`.trim()) || null;
+  try {
+    const response = await levelupApi.instructorRequests.list();
+    return (response.items || []).map(mapRequest).find((item) => item.userId === `${userId || ''}`.trim()) || null;
+  } catch (error) {
+    console.error('Error fetching instructor request:', error);
+    return null;
+  }
 }
 
 export function subscribeInstructorRequestForUser(userId, onData, onError) {
@@ -88,33 +108,94 @@ export async function submitInstructorRequest({
 }) {
   const normalizedEmail = `${email || ''}`.trim().toLowerCase();
   const uid = `${user?.uid || buildGuestUserId(normalizedEmail, phone)}`.trim();
-  const response = await levelupApi.instructorRequests.create({
-    userId: uid,
-    name,
-    email: normalizedEmail,
-    phone,
-    category,
-    coursesTaken,
-    experienceYears,
-    notes,
-  });
-  return mapRequest(response.item || response);
+  
+  try {
+    const response = await levelupApi.instructorRequests.create({
+      userId: uid,
+      name,
+      email: normalizedEmail,
+      phone,
+      category,
+      coursesTaken,
+      experienceYears: parseInt(experienceYears, 10) || 0,
+      notes,
+    });
+    
+    // Invalidate cache after successful submission
+    cache.requests = null;
+    cache.requestsExpiry = 0;
+    
+    return mapRequest(response.item || response);
+  } catch (error) {
+    console.error('Error submitting instructor request:', error);
+    throw error;
+  }
 }
 
 export async function approveInstructorRequest(request) {
   const id = `${request?.id || ''}`.trim();
-  if (!id) return;
-  await levelupApi.instructorRequests.updateStatus(id, 'approved');
+  if (!id) throw new Error('Request ID is required');
+  
+  try {
+    await levelupApi.instructorRequests.updateStatus(id, 'approved');
+    // Invalidate cache after status update
+    cache.requests = null;
+    cache.stats = null;
+    cache.requestsExpiry = 0;
+    cache.statsExpiry = 0;
+  } catch (error) {
+    console.error('Error approving instructor request:', error);
+    throw error;
+  }
 }
 
-export async function rejectInstructorRequest(request) {
+export async function rejectInstructorRequest(request, rejectionReason = '') {
   const id = `${request?.id || ''}`.trim();
-  if (!id) return;
-  await levelupApi.instructorRequests.updateStatus(id, 'rejected');
+  if (!id) throw new Error('Request ID is required');
+  
+  try {
+    await levelupApi.instructorRequests.updateStatus(id, 'rejected', { rejectionReason });
+    // Invalidate cache after status update
+    cache.requests = null;
+    cache.stats = null;
+    cache.requestsExpiry = 0;
+    cache.statsExpiry = 0;
+  } catch (error) {
+    console.error('Error rejecting instructor request:', error);
+    throw error;
+  }
 }
 
 export async function revokeInstructorRequest(request) {
   const id = `${request?.id || ''}`.trim();
-  if (!id) return;
-  await levelupApi.instructorRequests.updateStatus(id, 'revoked');
+  if (!id) throw new Error('Request ID is required');
+  
+  try {
+    await levelupApi.instructorRequests.updateStatus(id, 'revoked');
+    // Invalidate cache after status update
+    cache.requests = null;
+    cache.stats = null;
+    cache.requestsExpiry = 0;
+    cache.statsExpiry = 0;
+  } catch (error) {
+    console.error('Error revoking instructor request:', error);
+    throw error;
+  }
 }
+
+export async function getInstructorRequestStats() {
+  if (isCacheValid(cache.statsExpiry)) {
+    return cache.stats;
+  }
+  
+  try {
+    const response = await levelupApi.instructorRequests.stats();
+    cache.stats = response;
+    cache.statsExpiry = Date.now() + cache.TTL;
+    return response;
+  } catch (error) {
+    console.error('Error fetching instructor request stats:', error);
+    return { pending: 0, approved: 0, rejected: 0, revoked: 0, total: 0 };
+  }
+}
+

@@ -44,3 +44,17 @@ export const uploadRateLimiter = rateLimit({
     message: 'Too many upload requests. Please try again later.',
   },
 });
+
+export const instructorRequestRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.body?.email || req.ip,
+  message: {
+    status: 'error',
+    code: 'TOO_MANY_INSTRUCTOR_REQUESTS',
+    message: 'Too many instructor requests. Please try again later.',
+  },
+});
+

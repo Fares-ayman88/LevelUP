@@ -150,11 +150,14 @@ export const levelupApi = {
     create(payload) {
       return request('/instructor-requests', { method: 'POST', body: payload, auth: false });
     },
-    updateStatus(id, status) {
+    updateStatus(id, status, additionalData = {}) {
       return request(`/instructor-requests/${encodeURIComponent(id)}/status`, {
         method: 'PATCH',
-        body: { status },
+        body: { status, ...additionalData },
       });
+    },
+    stats() {
+      return request('/instructor-requests/stats');
     },
   },
   notifications: {

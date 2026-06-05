@@ -1,81 +1,82 @@
-<<<<<<< HEAD
-# LevelUp Web (React)
+# LevelUp Web
 
-This is the React web shell generated from the Flutter routes.
+LevelUp is an e-learning platform with a React web application, Flutter app assets/structure, PocketBase-backed course and chat data, Firebase authentication, and AI proxy support for assistant-style interactions.
 
-## Setup
-
-1. Copy `.env.example` to `.env` if you want to override any defaults.
-2. Install dependencies and run the dev server.
+## Quick Start
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Notes
+Copy `.env.example` to `.env` when you need local overrides.
 
-- Routes are mapped in `src/routes.jsx`.
-- Firebase auth and profile wiring lives in `src/state/auth.jsx`.
-- PocketBase endpoint detection lives in `src/services/pocketbase.js`.
-- The deployed site can use the built-in Vercel API route at `/api/chat` for AI replies.
+## Main Stack
 
-## Deploy on Vercel
+- React 18 and Vite for the web application.
+- React Router for page routing.
+- Firebase for authentication and related cloud services.
+- PocketBase for courses, mentors, chat, and support collections.
+- MUI, HeroUI, and Tailwind CSS for UI implementation.
+- Vercel API routes or the local Node proxy for AI chat.
 
-1. Import this repository into Vercel.
-2. Keep the root directory as the repository root.
-3. Add `GEMINI_API_KEY` for the built-in AI chat route.
-4. Add `VITE_PB_ENDPOINT` only if you have a public PocketBase server.
-5. Use a public `https://...` PocketBase URL for deployed sites. Do not point Vercel to `127.0.0.1`, `localhost`, or a private LAN IP.
-6. Redeploy.
+## Important Paths
 
-Firebase client config has a production fallback baked into the app, so the main auth flow can run without manual Vercel client env setup.
-The current repository also contains a temporary public PocketBase fallback URL for emergency testing only. Replace it with a stable hosted endpoint or Vercel env value before treating the deployment as production-ready.
-Production setup templates for the stable PocketBase cutover live in `ops/pocketbase-production/`.
+| Path | Purpose |
+| --- | --- |
+| `src/routes.jsx` | Web route map and role-restricted pages |
+| `src/pages` | Main web screens |
+| `src/services` | Firebase, PocketBase, chat, transactions, notifications, and AI helpers |
+| `server/pocketbase` | Local PocketBase server, scripts, data, and collection notes |
+| `server/gemini-proxy` | Local AI proxy service |
+| `ops/pocketbase-production` | Production PocketBase setup templates |
+| `Doc/LevelUp_Project_Documentation.md` | Professional project documentation draft |
 
-The included `vercel.json` tells Vercel to build the Vite app into `dist` and rewrite SPA routes to `index.html`.
-=======
-# levelup
+## PocketBase
 
-# LevelUp Web (React)
+Run the local server:
 
-This is the React web shell generated from the Flutter routes.
-
-## Setup
-
-1. Copy `.env.example` to `.env` if you want to override any defaults.
-2. Install dependencies and run the dev server.
-
-```bash
-npm install
-npm run dev
+```powershell
+cd server/pocketbase
+.\run-pocketbase.ps1
 ```
 
-## Notes
+Admin dashboard:
 
-- Routes are mapped in `src/routes.jsx`.
-- Firebase auth and profile wiring lives in `src/state/auth.jsx`.
-- PocketBase endpoint detection lives in `src/services/pocketbase.js`.
-- The deployed site can use the built-in Vercel API route at `/api/chat` for AI 
-replies.
+```text
+http://127.0.0.1:8090/_/
+```
 
-## Deploy on Vercel
+For deployed sites, `VITE_PB_ENDPOINT` must point to a public HTTPS PocketBase URL. Do not use `localhost`, `127.0.0.1`, or a private LAN IP in production.
 
-1. Import this repository into Vercel.
-2. Keep the root directory as the repository root.
-3. Add `GEMINI_API_KEY` for the built-in AI chat route.
-4. Add `VITE_PB_ENDPOINT` only if you have a public PocketBase server.
-5. Use a public `https://...` PocketBase URL for deployed sites. Do not point Ve
-rcel to `127.0.0.1`, `localhost`, or a private LAN IP.
-6. Redeploy.
+## AI Proxy
 
-Firebase client config has a production fallback baked into the app, so the main
- auth flow can run without manual Vercel client env setup.
-The current repository also contains a temporary public PocketBase fallback URL 
-for emergency testing only. Replace it with a stable hosted endpoint or Vercel e
-nv value before treating the deployment as production-ready.
-Production setup templates for the stable PocketBase cutover live in `ops/pocket
-base-production/`.
+For local AI proxy development:
 
-The included `vercel.json` tells Vercel to build the Vite app into `dist` and re
-write SPA routes to `index.html`.
+```bash
+cd server/gemini-proxy
+npm install
+npm start
+```
+
+The proxy runs on:
+
+```text
+http://localhost:8787
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+The Vercel configuration builds the Vite app into `dist` and rewrites SPA routes to `index.html`.
+
+## Documentation
+
+The main professional documentation draft is available at:
+
+```text
+Doc/LevelUp_Project_Documentation.md
+```
