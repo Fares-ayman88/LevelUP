@@ -719,7 +719,7 @@ async function verifyGoogleIdToken(idToken, clientId) {
 
 async function handleAuth(req, res, parts) {
   const sql = getSql();
-  if (req.method === 'POST' && parts[1] === 'signup') {
+  if (req.method === 'POST' && ['signup', 'register'].includes(parts[1])) {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
     const name = String(req.body?.name || req.body?.fullName || '').trim();
@@ -739,7 +739,7 @@ async function handleAuth(req, res, parts) {
     }
   }
 
-  if (req.method === 'POST' && parts[1] === 'signin') {
+  if (req.method === 'POST' && ['signin', 'login'].includes(parts[1])) {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
     const rows = await sql`select * from users where email = ${email} limit 1`;
@@ -819,37 +819,57 @@ async function handleMe(req, res) {
 async function handleCatalog(req, res, parts, table, prefix) {
   const sql = getSql();
   const id = parts[1] || '';
+  const isCourses = table === 'courses';
   if (req.method === 'GET' && !id) {
-    const rows = await sql(`select * from ${table} order by coalesce(featured_rank, 999999), created_at desc`);
+    const rows = isCourses
+      ? await sql`select * from courses order by coalesce(featured_rank, 999999), created_at desc`
+      : await sql`select * from mentors order by coalesce(featured_rank, 999999), created_at desc`;
     return send(res, 200, { items: rows.map(mapJsonRecord) });
   }
   if (req.method === 'POST' && !id) {
     const user = await requireAdminish(req, res);
     if (!user) return;
     const item = { ...req.body, id: req.body?.id || makeId(prefix), createdAt: nowIso(), updatedAt: nowIso() };
-    const rows = await sql(
-      `insert into ${table} (id, data, featured_rank) values ($1, $2, $3) returning *`,
-      [item.id, JSON.stringify(item), toNullableInt(item.featuredRank)]
-    );
+    const rows = isCourses
+      ? await sql`
+        insert into courses (id, data, featured_rank)
+        values (${item.id}, ${JSON.stringify(item)}, ${toNullableInt(item.featuredRank)})
+        returning *
+      `
+      : await sql`
+        insert into mentors (id, data, featured_rank)
+        values (${item.id}, ${JSON.stringify(item)}, ${toNullableInt(item.featuredRank)})
+        returning *
+      `;
     return send(res, 201, { item: mapJsonRecord(rows[0]) });
   }
   if (req.method === 'PATCH' && id) {
     const user = await requireAdminish(req, res);
     if (!user) return;
-    const currentRows = await sql(`select * from ${table} where id = $1 limit 1`, [id]);
+    const currentRows = isCourses
+      ? await sql`select * from courses where id = ${id} limit 1`
+      : await sql`select * from mentors where id = ${id} limit 1`;
     if (!currentRows.length) return bad(res, 'Not found.', 404);
     const current = mapJsonRecord(currentRows[0]);
     const next = { ...current, ...req.body, id, updatedAt: nowIso() };
-    const rows = await sql(
-      `update ${table} set data = $1, featured_rank = $2, updated_at = now() where id = $3 returning *`,
-      [JSON.stringify(next), toNullableInt(next.featuredRank), id]
-    );
+    const rows = isCourses
+      ? await sql`
+        update courses set data = ${JSON.stringify(next)}, featured_rank = ${toNullableInt(next.featuredRank)}, updated_at = now()
+        where id = ${id}
+        returning *
+      `
+      : await sql`
+        update mentors set data = ${JSON.stringify(next)}, featured_rank = ${toNullableInt(next.featuredRank)}, updated_at = now()
+        where id = ${id}
+        returning *
+      `;
     return send(res, 200, { item: mapJsonRecord(rows[0]) });
   }
   if (req.method === 'DELETE' && id) {
     const user = await requireAdminish(req, res);
     if (!user) return;
-    await sql(`delete from ${table} where id = $1`, [id]);
+    if (isCourses) await sql`delete from courses where id = ${id}`;
+    else await sql`delete from mentors where id = ${id}`;
     return send(res, 200, { ok: true });
   }
   return bad(res, 'Not found.', 404);
