@@ -57,6 +57,7 @@ import MentorCourses from './pages/MentorCourses.jsx';
 import MentorTransactions from './pages/MentorTransactions.jsx';
 import FeaturedSort from './pages/FeaturedSort.jsx';
 import UserFlow from './pages/UserFlow.jsx';
+import PresentationWebsite from './pages/PresentationWebsite.jsx';
 
 export const routeConfig = [
   { path: '/', title: 'Root', component: RootRedirect },
@@ -118,4 +119,5 @@ export const routeConfig = [
   { path: '/mentor-transactions', title: 'Mentor Transactions', component: MentorTransactions, roles: ['instructor'] },
   { path: '/featured-sort', title: 'Featured Sort', component: FeaturedSort, roles: ['admin'] },
   { path: '/user-flow', title: 'User Flow', component: UserFlow },
+  { path: '/presentation', title: 'LevelUP Presentation', component: PresentationWebsite },
 ];

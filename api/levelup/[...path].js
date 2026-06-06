@@ -66,6 +66,14 @@ function getAdminEmail() {
   ).trim();
 }
 
+function getResendFrom() {
+  return (process.env.RESEND_FROM || process.env.EMAIL_FROM || 'LevelUP <onboarding@resend.dev>').trim();
+}
+
+function hasResendConfig() {
+  return Boolean(process.env.RESEND_API_KEY && getAdminEmail());
+}
+
 function hasSmtpConfig() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && getAdminEmail());
 }
@@ -90,7 +98,26 @@ function getSmtpConfigStatus() {
   const from = process.env.SMTP_FROM || (process.env.SMTP_USER ? `LevelUp <${process.env.SMTP_USER}>` : '');
 
   return {
-    configured: hasSmtpConfig(),
+    configured: hasResendConfig() || hasSmtpConfig(),
+    provider: hasResendConfig() ? 'resend' : 'smtp',
+    resend: {
+      configured: hasResendConfig(),
+      hasApiKey: Boolean(process.env.RESEND_API_KEY),
+      apiKeyLength: process.env.RESEND_API_KEY ? String(process.env.RESEND_API_KEY).length : 0,
+      from: maskEmail(getResendFrom()),
+    },
+    smtp: {
+      configured: hasSmtpConfig(),
+      host: process.env.SMTP_HOST || '',
+      port,
+      secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+      hasUser: Boolean(process.env.SMTP_USER),
+      user: maskEmail(process.env.SMTP_USER),
+      hasPass: Boolean(process.env.SMTP_PASS),
+      passLength: process.env.SMTP_PASS ? String(process.env.SMTP_PASS).length : 0,
+      hasFrom: Boolean(process.env.SMTP_FROM),
+      from: maskEmail(from),
+    },
     host: process.env.SMTP_HOST || '',
     port,
     secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
@@ -156,6 +183,10 @@ function createSmtpTransporter() {
 }
 
 async function sendInstructorRequestEmail(item) {
+  if (hasResendConfig()) {
+    return sendInstructorRequestEmailWithResend(item);
+  }
+
   const transporter = createSmtpTransporter();
   const content = buildInstructorRequestEmail(item);
 
@@ -169,9 +200,36 @@ async function sendInstructorRequestEmail(item) {
   });
 }
 
+async function sendInstructorRequestEmailWithResend(item) {
+  const content = buildInstructorRequestEmail(item);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: getResendFrom(),
+      to: [getAdminEmail()],
+      reply_to: item.email || undefined,
+      subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
+      text: content.text,
+      html: content.html,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.message || data?.error || `Resend email failed: ${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
 async function notifyInstructorRequest(item) {
-  if (!hasSmtpConfig()) {
-    console.warn('Instructor request email skipped: SMTP is not configured.');
+  if (!hasResendConfig() && !hasSmtpConfig()) {
+    console.warn('Instructor request email skipped: Resend/SMTP is not configured.');
     return;
   }
   try {

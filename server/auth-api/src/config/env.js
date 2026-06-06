@@ -59,6 +59,7 @@ export const env = {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
     from: process.env.SMTP_FROM || 'LevelUp <no-reply@levelup.local>',
+    adminEmail: process.env.LEVELUP_ADMIN_EMAIL || process.env.ADMIN_EMAIL || process.env.SMTP_TO || process.env.SMTP_USER,
   },
   upload: {
     tempDir: process.env.UPLOAD_TEMP_DIR || 'tmp/uploads',

@@ -16,6 +16,7 @@ const HIDDEN_ROUTE_PREFIXES = [
   '/lesson-player',
   '/mentor-chat-thread',
   '/support-chat-thread',
+  '/presentation',
 ];
 
 const footerSections = [

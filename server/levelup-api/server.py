@@ -3,17 +3,43 @@ from urllib.parse import parse_qs, unquote, urlparse
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
 import secrets
+import smtplib
 import sqlite3
 import time
 import uuid
 import urllib.parse
 import urllib.request
+from email.message import EmailMessage
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def load_env_file(path):
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            for raw in handle:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except Exception as exc:
+        print(f"Could not load env file {path}: {exc}")
+
+
+load_env_file(os.path.abspath(os.path.join(BASE_DIR, "..", "..", ".env")))
+load_env_file(os.path.join(BASE_DIR, ".env"))
+
 HOST = os.getenv("LEVELUP_API_HOST", "127.0.0.1")
 PORT = int(os.getenv("LEVELUP_API_PORT", "8080"))
 DB_PATH = os.getenv("LEVELUP_DB_PATH", os.path.join(BASE_DIR, "levelup.sqlite3"))
@@ -27,6 +53,179 @@ DEFAULT_ADMINS = {
     "mahmoud": "mahmoud123",
 }
 DEFAULT_GOOGLE_CLIENT_ID = "617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com"
+
+
+def get_admin_email():
+    return (
+        os.getenv("LEVELUP_ADMIN_EMAIL")
+        or os.getenv("ADMIN_EMAIL")
+        or os.getenv("SMTP_TO")
+        or os.getenv("SMTP_USER")
+        or ""
+    ).strip()
+
+
+def get_resend_from():
+    return (os.getenv("RESEND_FROM") or os.getenv("EMAIL_FROM") or "LevelUP <onboarding@resend.dev>").strip()
+
+
+def has_resend_config():
+    return bool(os.getenv("RESEND_API_KEY") and get_admin_email())
+
+
+def has_smtp_config():
+    return bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_USER") and os.getenv("SMTP_PASS") and get_admin_email())
+
+
+def mask_email(value=""):
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "<" in raw and ">" in raw:
+        raw = raw.split("<", 1)[1].split(">", 1)[0].strip()
+    if "@" not in raw:
+        return raw[:2] + "****" + raw[-2:] if len(raw) > 4 else "****"
+    name, domain = raw.split("@", 1)
+    return f"{name[:2]}***@{domain}"
+
+
+def smtp_status():
+    port = int(os.getenv("SMTP_PORT", "465"))
+    from_addr = os.getenv("SMTP_FROM") or (f"LevelUp <{os.getenv('SMTP_USER')}>" if os.getenv("SMTP_USER") else "")
+    return {
+        "configured": has_resend_config() or has_smtp_config(),
+        "provider": "resend" if has_resend_config() else "smtp",
+        "resend": {
+            "configured": has_resend_config(),
+            "hasApiKey": bool(os.getenv("RESEND_API_KEY")),
+            "apiKeyLength": len(os.getenv("RESEND_API_KEY", "")),
+            "from": mask_email(get_resend_from()),
+        },
+        "smtp": {
+            "configured": has_smtp_config(),
+            "host": os.getenv("SMTP_HOST", ""),
+            "port": port,
+            "secure": os.getenv("SMTP_SECURE", "").lower() == "true" or port == 465,
+            "hasUser": bool(os.getenv("SMTP_USER")),
+            "user": mask_email(os.getenv("SMTP_USER", "")),
+            "hasPass": bool(os.getenv("SMTP_PASS")),
+            "passLength": len(os.getenv("SMTP_PASS", "")),
+            "hasFrom": bool(os.getenv("SMTP_FROM")),
+            "from": mask_email(from_addr),
+        },
+        "host": os.getenv("SMTP_HOST", ""),
+        "port": port,
+        "secure": os.getenv("SMTP_SECURE", "").lower() == "true" or port == 465,
+        "hasUser": bool(os.getenv("SMTP_USER")),
+        "user": mask_email(os.getenv("SMTP_USER", "")),
+        "hasPass": bool(os.getenv("SMTP_PASS")),
+        "passLength": len(os.getenv("SMTP_PASS", "")),
+        "hasAdminEmail": bool(get_admin_email()),
+        "adminEmail": mask_email(get_admin_email()),
+        "hasFrom": bool(os.getenv("SMTP_FROM")),
+        "from": mask_email(from_addr),
+    }
+
+
+def make_guest_instructor_user_id(email):
+    digest = hashlib.sha256(str(email or "").lower().encode("utf-8")).hexdigest()
+    return f"guest_{digest[:20]}"
+
+
+def build_instructor_email(item):
+    rows = [
+        ("Name", item.get("name")),
+        ("Email", item.get("email")),
+        ("Phone", item.get("phone")),
+        ("Category", item.get("category")),
+        ("Courses Taken", item.get("coursesTaken")),
+        ("Experience Years", item.get("experienceYears")),
+        ("Notes", item.get("notes")),
+        ("Request ID", item.get("id")),
+        ("Status", item.get("status")),
+    ]
+    filled = [(label, str(value).strip()) for label, value in rows if value is not None and str(value).strip()]
+    text = "\n".join(f"{label}: {value}" for label, value in filled)
+    html_rows = "".join(
+        "<tr>"
+        f"<th align='left' style='padding:8px;border-bottom:1px solid #e5e7eb;'>{html.escape(label)}</th>"
+        f"<td style='padding:8px;border-bottom:1px solid #e5e7eb;'>{html.escape(value)}</td>"
+        "</tr>"
+        for label, value in filled
+    )
+    html_body = (
+        "<div style='font-family:Arial,sans-serif;color:#111827;'>"
+        "<h2>New instructor application</h2>"
+        "<table cellspacing='0' cellpadding='0' style='border-collapse:collapse;width:100%;max-width:720px;'>"
+        f"{html_rows}</table></div>"
+    )
+    return text, html_body
+
+
+def send_instructor_request_email(item):
+    if has_resend_config():
+        return send_instructor_request_email_with_resend(item)
+
+    if not has_smtp_config():
+        print("Instructor request email skipped: Resend/SMTP is not configured.")
+        return None
+
+    text, html_body = build_instructor_email(item)
+    msg = EmailMessage()
+    msg["From"] = os.getenv("SMTP_FROM") or f"LevelUp <{os.getenv('SMTP_USER')}>"
+    msg["To"] = get_admin_email()
+    if item.get("email"):
+        msg["Reply-To"] = item.get("email")
+    msg["Subject"] = f"New instructor application: {item.get('name') or item.get('email') or 'Candidate'}"
+    msg.set_content(text)
+    msg.add_alternative(html_body, subtype="html")
+
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", "465"))
+    secure = os.getenv("SMTP_SECURE", "").lower() == "true" or port == 465
+    if secure:
+        with smtplib.SMTP_SSL(host, port, timeout=15) as smtp:
+            smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            return smtp.send_message(msg)
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        smtp.starttls()
+        smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+        return smtp.send_message(msg)
+
+
+def send_instructor_request_email_with_resend(item):
+    text, html_body = build_instructor_email(item)
+    payload = {
+        "from": get_resend_from(),
+        "to": [get_admin_email()],
+        "reply_to": item.get("email") or None,
+        "subject": f"New instructor application: {item.get('name') or item.get('email') or 'Candidate'}",
+        "text": text,
+        "html": html_body,
+    }
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {os.getenv('RESEND_API_KEY')}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise Exception(f"Resend email failed: {exc.code} {body}") from exc
+
+
+def notify_instructor_request(item):
+    try:
+        return send_instructor_request_email(item)
+    except Exception as exc:
+        print(f"Instructor request email failed: {exc}")
+        return None
 
 
 def now_iso():
@@ -430,6 +629,10 @@ class Handler(BaseHTTPRequestHandler):
         path, parts, query = self.route()
         if path == "/health":
             return self.send_json({"ok": True, "time": now_iso()})
+        if path == "/debug/smtp":
+            return self.send_json(smtp_status())
+        if path == "/debug/smtp-test":
+            return self.smtp_test(query)
         if path.startswith("/uploads/"):
             return self.serve_upload(path[len("/uploads/"):])
         if path == "/auth/me":
@@ -709,12 +912,14 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_row("transactions", item_id)
 
     def create_instructor_request(self):
-        user = self.require_user()
-        if not user:
-            return
+        user = self.current_user()
         body = self.read_json()
-        user_id = (body.get("userId") or user["id"]).strip()
+        email = (body.get("email") or "").strip().lower()
+        user_id = (body.get("userId") or (user["id"] if user else "") or make_guest_instructor_user_id(email)).strip()
         item = pick(body, ["name", "email", "phone", "category", "coursesTaken", "experienceYears", "notes", "cvUrl", "idUrl"])
+        item["email"] = email
+        if not item.get("name") or not item.get("email") or not item.get("phone") or not item.get("category"):
+            return self.error("Missing required instructor application fields.")
         item.update({
             "id": make_id("irq_"),
             "userId": user_id,
@@ -731,9 +936,38 @@ class Handler(BaseHTTPRequestHandler):
             update_by_where("instructor_requests", "userId", user_id, item)
             with db() as conn:
                 row = conn.execute("select * from instructor_requests where userId = ?", (user_id,)).fetchone()
-            return self.send_json({"item": row_to_dict(row)})
+            saved = row_to_dict(row)
+            notify_instructor_request(saved)
+            return self.send_json({"item": saved})
         insert("instructor_requests", item)
+        notify_instructor_request(item)
         return self.send_json({"item": item}, 201)
+
+    def smtp_test(self, query):
+        expected = os.getenv("LEVELUP_EMAIL_TEST_SECRET", "")
+        provided = str(query.get("secret") or self.headers.get("x-levelup-test-secret") or "")
+        if not expected:
+            return self.error("LEVELUP_EMAIL_TEST_SECRET is not configured.", 503)
+        if not provided or provided != expected:
+            return self.error("Invalid email test secret.", 403)
+        if not has_smtp_config():
+            return self.send_json({"ok": False, "error": "SMTP is not fully configured.", "smtp": smtp_status()}, 503)
+        item = {
+            "id": make_id("debug_"),
+            "name": "SMTP Test",
+            "email": get_admin_email(),
+            "phone": "test",
+            "category": "diagnostic",
+            "coursesTaken": "Diagnostic SMTP email",
+            "experienceYears": "0",
+            "notes": "This is a LevelUp SMTP test email.",
+            "status": "test",
+        }
+        try:
+            result = send_instructor_request_email(item)
+            return self.send_json({"ok": True, "result": result or {}})
+        except Exception as exc:
+            return self.send_json({"ok": False, "error": str(exc), "smtp": smtp_status()}, 500)
 
     def list_instructor_requests(self, query):
         if not self.require_adminish():

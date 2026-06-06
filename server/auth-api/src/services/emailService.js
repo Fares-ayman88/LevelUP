@@ -19,16 +19,17 @@ export class EmailService {
     });
   }
 
-  async sendMail({ to, subject, text }) {
+  async sendMail({ to, subject, text, replyTo }) {
     const transport = await this.createTransport();
     if (!transport) {
-      logger.info('SMTP is not configured; email content logged instead', { to, subject, text });
+      logger.info('SMTP is not configured; email content logged instead', { to, subject, text, replyTo });
       return;
     }
 
     await transport.sendMail({
       from: env.smtp.from,
       to,
+      replyTo,
       subject,
       text,
     });

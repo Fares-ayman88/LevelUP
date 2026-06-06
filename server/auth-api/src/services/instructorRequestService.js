@@ -32,7 +32,8 @@ export class InstructorRequestService {
       notes: payload.notes || '',
     });
 
-    // Send confirmation email
+    // Notify both sides. Failures are logged inside each method and do not block request creation.
+    await this.sendAdminNotificationEmail(request);
     await this.sendConfirmationEmail(request);
 
     return request;
@@ -70,7 +71,7 @@ export class InstructorRequestService {
 
   async sendConfirmationEmail(request) {
     try {
-      const confirmationUrl = `${env.frontendUrl || 'https://levelup.com'}/instructor-documents?email=${encodeURIComponent(request.email)}`;
+      const confirmationUrl = `${env.clientUrl || 'https://levelup.com'}/instructor-documents?email=${encodeURIComponent(request.email)}`;
       const message = `
 Thank you for your instructor registration application, ${request.name}!
 
@@ -92,13 +93,47 @@ Best regards,
 LevelUp Team
       `.trim();
 
-      await emailService.send({
+      await emailService.sendMail({
         to: request.email,
         subject: 'Instructor Application Received - LevelUp',
         text: message,
       });
     } catch (error) {
       console.error('Failed to send confirmation email:', error);
+    }
+  }
+
+  async sendAdminNotificationEmail(request) {
+    try {
+      if (!env.smtp.adminEmail) {
+        console.warn('Instructor request admin email skipped: LEVELUP_ADMIN_EMAIL/ADMIN_EMAIL/SMTP_TO is not configured.');
+        return;
+      }
+
+      const message = `
+New instructor application received.
+
+Name: ${request.name}
+Email: ${request.email}
+Phone: ${request.phone}
+Category: ${request.category}
+Courses Taken: ${request.coursesTaken || '-'}
+Experience Years: ${request.experienceYears || 0}
+Notes: ${request.notes || '-'}
+Request ID: ${request.id}
+Status: ${request.status}
+
+Open the admin dashboard to approve or reject this request.
+      `.trim();
+
+      await emailService.sendMail({
+        to: env.smtp.adminEmail,
+        replyTo: request.email,
+        subject: `New instructor application: ${request.name || request.email}`,
+        text: message,
+      });
+    } catch (error) {
+      console.error('Failed to send admin instructor request email:', error);
     }
   }
 
@@ -139,7 +174,7 @@ LevelUp Team
       }
 
       if (subject && message) {
-        await emailService.send({
+        await emailService.sendMail({
           to: request.email,
           subject,
           text: message,
