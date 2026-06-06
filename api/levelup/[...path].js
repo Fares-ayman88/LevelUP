@@ -105,14 +105,14 @@ function hasResendConfig() {
 }
 
 function hasSmtpConfig() {
-  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
-  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
   return Boolean(process.env.SMTP_HOST && user && pass && getAdminEmail());
 }
 
 function hasSmtpAuthConfig() {
-  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
-  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
   return Boolean(process.env.SMTP_HOST && user && pass);
 }
 
@@ -137,9 +137,9 @@ function maskEmail(value = '') {
 
 function getSmtpConfigStatus() {
   const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
-  const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER;
-  const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-  const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || (smtpUser ? `LevelUp <${smtpUser}>` : '');
+  const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || (smtpUser ? `LevelUp <${smtpUser}>` : '');
 
   return {
     configured: hasResendConfig() || hasSmtpConfig(),
@@ -214,8 +214,8 @@ function buildInstructorRequestEmail(item = {}) {
 
 function createSmtpTransporter() {
   const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
-  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
-  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
 
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -237,7 +237,7 @@ async function sendInstructorRequestEmail(item) {
   const content = buildInstructorRequestEmail(item);
 
   return transporter.sendMail({
-    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
     to: getAdminEmail(),
     replyTo: item.email || undefined,
     subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
@@ -282,7 +282,7 @@ async function sendVerificationEmail(email, otp) {
   if (hasSmtpAuthConfig()) {
     const transporter = createSmtpTransporter();
     return transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+      from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
       to: email,
       subject,
       text,
