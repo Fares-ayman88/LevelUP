@@ -245,6 +245,8 @@ export async function signUpWithEmail(email, password, name = '') {
       user: toUser(response.user),
       email: response.user?.email || email,
       pendingVerification: response.pendingVerification === true || response.data?.pendingVerification === true,
+      emailDelivery: response.emailDelivery || response.data?.emailDelivery || '',
+      emailDeliveryError: response.emailDeliveryError || response.data?.emailDeliveryError || '',
     };
   }, 'Creating account...');
 }

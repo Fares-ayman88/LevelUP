@@ -67,11 +67,18 @@ export default function SignUp() {
         }
       }
       sessionStorage.setItem('levelup_pending_verification_email', value.toLowerCase());
-      toast.info('Account created. Check your email for the OTP code.');
+      if (result?.emailDelivery === 'failed') {
+        toast.error('Account created, but the OTP email could not be sent. Fix email settings, then use Resend OTP.');
+      } else {
+        toast.info('Account created. Check your email for the OTP code.');
+      }
       navigate('/verify-otp', {
         replace: true,
         state: {
           email: value,
+          message: result?.emailDelivery === 'failed'
+            ? 'Account created, but the OTP email could not be sent yet. Try Resend OTP after email settings are fixed.'
+            : undefined,
           redirectTo: '/home',
         },
       });

@@ -321,12 +321,14 @@ async function sendVerificationEmail(email, otp) {
 async function notifyVerificationOtp(email, otp) {
   if (!hasVerificationEmailConfig()) {
     console.warn('Verification OTP email skipped: outbound email is not configured.', { email });
-    return;
+    return { ok: false, error: 'Verification email is not configured.' };
   }
   try {
-    await sendVerificationEmail(email, otp);
+    const info = await sendVerificationEmail(email, otp);
+    return { ok: true, info };
   } catch (error) {
     console.warn('Verification OTP email failed:', error?.message || error);
+    return { ok: false, error: error?.message || 'Verification email failed.' };
   }
 }
 
@@ -881,9 +883,11 @@ async function handleAuth(req, res, parts) {
         returning *
       `;
       const user = rows[0];
-      await notifyVerificationOtp(email, otp);
+      const delivery = await notifyVerificationOtp(email, otp);
       return send(res, 201, {
         pendingVerification: true,
+        emailDelivery: delivery.ok ? 'sent' : 'failed',
+        emailDeliveryError: delivery.ok ? undefined : delivery.error,
         message: 'Registration successful. Please verify your email first.',
         user: publicUser(user),
       });
@@ -977,7 +981,10 @@ async function handleAuth(req, res, parts) {
         updated_at = now()
       where id = ${user.id}
     `;
-    await notifyVerificationOtp(email, otp);
+    const delivery = await notifyVerificationOtp(email, otp);
+    if (!delivery.ok) {
+      return bad(res, `OTP email could not be sent: ${delivery.error}`, 503, 'OTP_EMAIL_FAILED');
+    }
     return send(res, 202, { ok: true, message: 'Verification OTP sent.' });
   }
 
