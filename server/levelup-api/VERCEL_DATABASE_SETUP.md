@@ -39,13 +39,13 @@ Production should use the default internal API:
 /api/levelup
 ```
 
-7. Make sure this variable is not set to false if you want to keep MonsterASP auth proxying:
+7. For a stable Vercel/Postgres setup, make Vercel own auth and instructor requests together:
 
 ```env
-LEVELUP_USE_MONSTERASP
+LEVELUP_USE_MONSTERASP=false
 ```
 
-For the current Vercel/Postgres setup, remove it or set it only if you know which backend should own auth.
+This is important. If auth is proxied to MonsterASP while instructor requests are stored in Vercel Postgres, the admin token will not match the Vercel API and the dashboard can appear empty.
 
 8. Redeploy the Vercel project.
 
