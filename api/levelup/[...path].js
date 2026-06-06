@@ -110,10 +110,14 @@ function hasSmtpConfig() {
   return Boolean(process.env.SMTP_HOST && user && pass && getAdminEmail());
 }
 
-function hasVerificationEmailConfig() {
+function hasSmtpAuthConfig() {
   const user = process.env.EMAIL_USER || process.env.SMTP_USER;
   const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-  return Boolean(process.env.RESEND_API_KEY || (process.env.SMTP_HOST && user && pass));
+  return Boolean(process.env.SMTP_HOST && user && pass);
+}
+
+function hasVerificationEmailConfig() {
+  return Boolean(hasSmtpAuthConfig() || process.env.RESEND_API_KEY);
 }
 
 function maskEmail(value = '') {
@@ -275,6 +279,22 @@ async function sendVerificationEmail(email, otp) {
   const text = `Welcome to LevelUp.\n\nYour email verification code is: ${otp}\n\nThis code expires in ${config.expiresMinutes} minutes. Do not share it with anyone.`;
   const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;"><h2>Verify your LevelUp email</h2><p>Your verification code is:</p><div style="font-size:32px;font-weight:700;letter-spacing:6px;padding:16px 20px;background:#f3f6ff;border-radius:12px;display:inline-block;">${escapeHtml(otp)}</div><p>This code expires in ${config.expiresMinutes} minutes.</p></div>`;
 
+  if (hasSmtpAuthConfig()) {
+    try {
+      const transporter = createSmtpTransporter();
+      return await transporter.sendMail({
+        from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+        to: email,
+        subject,
+        text,
+        html,
+      });
+    } catch (error) {
+      if (!process.env.RESEND_API_KEY) throw error;
+      console.warn('Verification OTP SMTP failed; falling back to Resend:', error?.message || error);
+    }
+  }
+
   if (process.env.RESEND_API_KEY) {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -300,14 +320,7 @@ async function sendVerificationEmail(email, otp) {
     return data;
   }
 
-  const transporter = createSmtpTransporter();
-  return transporter.sendMail({
-    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-    to: email,
-    subject,
-    text,
-    html,
-  });
+  throw new Error('Verification email is not configured.');
 }
 
 async function notifyVerificationOtp(email, otp) {
@@ -414,6 +427,39 @@ async function handleDebug(req, res, parts, query) {
       return send(res, 500, {
         ok: false,
         error: error?.message || 'Email test failed.',
+        code: error?.code || null,
+        command: error?.command || null,
+        response: error?.response || null,
+        smtp: getSmtpConfigStatus(),
+      });
+    }
+  }
+
+  if (parts[1] === 'otp-test') {
+    const expected = process.env.LEVELUP_EMAIL_TEST_SECRET || '';
+    const provided = String(query.secret || req.headers['x-levelup-test-secret'] || '');
+    const email = String(query.email || getAdminEmail() || '').trim().toLowerCase();
+
+    if (!expected) return bad(res, 'LEVELUP_EMAIL_TEST_SECRET is not configured.', 503);
+    if (!provided || provided !== expected) return bad(res, 'Invalid email test secret.', 403);
+    if (!email.includes('@')) return bad(res, 'Valid email is required.');
+
+    try {
+      const info = await sendVerificationEmail(email, '123456');
+      return send(res, 200, {
+        ok: true,
+        email: maskEmail(email),
+        result: {
+          messageId: info?.messageId || null,
+          accepted: info?.accepted || [],
+          rejected: info?.rejected || [],
+          response: info?.response || '',
+        },
+      });
+    } catch (error) {
+      return send(res, 500, {
+        ok: false,
+        error: error?.message || 'OTP email test failed.',
         code: error?.code || null,
         command: error?.command || null,
         response: error?.response || null,
