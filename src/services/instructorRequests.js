@@ -38,6 +38,70 @@ const cache = {
   TTL: 30000, // 30 seconds
 };
 
+const STORAGE_KEY = 'levelup_instructor_requests_cache_v1';
+
+function readStoredRequests() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(mapRequest).filter((item) => item.id || item.userId) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredRequests(items = []) {
+  if (typeof window === 'undefined') return;
+  try {
+    const byId = new Map();
+    [...readStoredRequests(), ...items.map(mapRequest)].forEach((item) => {
+      const key = item.id || item.userId;
+      if (key) byId.set(key, item);
+    });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(byId.values())));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function mergeStoredRequests(items = []) {
+  const byId = new Map();
+  [...readStoredRequests(), ...items.map(mapRequest)].forEach((item) => {
+    const key = item.id || item.userId;
+    if (key) byId.set(key, item);
+  });
+  const merged = Array.from(byId.values());
+  writeStoredRequests(merged);
+  return merged;
+}
+
+function removeStoredRequest(id = '') {
+  if (typeof window === 'undefined') return;
+  const target = `${id || ''}`.trim();
+  if (!target) return;
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(readStoredRequests().filter((item) => item.id !== target && item.userId !== target)),
+    );
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function calculateStats(items = []) {
+  return items.reduce(
+    (acc, item) => {
+      const status = `${item.status || 'pending'}`.trim().toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(acc, status)) acc[status] += 1;
+      acc.total += 1;
+      return acc;
+    },
+    { pending: 0, approved: 0, rejected: 0, revoked: 0, total: 0 },
+  );
+}
+
 function isCacheValid(expiry) {
   return expiry > Date.now();
 }
@@ -64,7 +128,7 @@ export function subscribeInstructorRequestsByStatus(status, onData, onError) {
   const normalized = `${status || 'pending'}`.trim() || 'pending';
   return poll(async () => {
     const response = await levelupApi.instructorRequests.list({ status: normalized });
-    return (response.items || []).map(mapRequest);
+    return mergeStoredRequests(response.items || []).filter((item) => item.status === normalized);
   }, onData, onError);
 }
 
@@ -75,10 +139,10 @@ export function subscribePendingInstructorRequests(onData, onError) {
 export async function fetchInstructorRequestForUser(userId) {
   try {
     const response = await levelupApi.instructorRequests.list();
-    return (response.items || []).map(mapRequest).find((item) => item.userId === `${userId || ''}`.trim()) || null;
+    return mergeStoredRequests(response.items || []).find((item) => item.userId === `${userId || ''}`.trim()) || null;
   } catch (error) {
     console.error('Error fetching instructor request:', error);
-    return null;
+    return readStoredRequests().find((item) => item.userId === `${userId || ''}`.trim()) || null;
   }
 }
 
@@ -125,7 +189,9 @@ export async function submitInstructorRequest({
     cache.requests = null;
     cache.requestsExpiry = 0;
     
-    return mapRequest(response.item || response);
+    const request = mapRequest(response.item || response);
+    writeStoredRequests([request]);
+    return request;
   } catch (error) {
     console.error('Error submitting instructor request:', error);
     throw error;
@@ -138,6 +204,7 @@ export async function approveInstructorRequest(request) {
   
   try {
     await levelupApi.instructorRequests.updateStatus(id, 'approved');
+    writeStoredRequests([{ ...request, status: 'approved', approvedAt: new Date().toISOString() }]);
     // Invalidate cache after status update
     cache.requests = null;
     cache.stats = null;
@@ -155,6 +222,7 @@ export async function rejectInstructorRequest(request, rejectionReason = '') {
   
   try {
     await levelupApi.instructorRequests.updateStatus(id, 'rejected', { rejectionReason });
+    writeStoredRequests([{ ...request, status: 'rejected', rejectionReason, rejectedAt: new Date().toISOString() }]);
     // Invalidate cache after status update
     cache.requests = null;
     cache.stats = null;
@@ -172,6 +240,7 @@ export async function revokeInstructorRequest(request) {
   
   try {
     await levelupApi.instructorRequests.updateStatus(id, 'revoked');
+    removeStoredRequest(id);
     // Invalidate cache after status update
     cache.requests = null;
     cache.stats = null;
@@ -190,12 +259,19 @@ export async function getInstructorRequestStats() {
   
   try {
     const response = await levelupApi.instructorRequests.stats();
-    cache.stats = response;
+    const localStats = calculateStats(readStoredRequests());
+    cache.stats = {
+      pending: Math.max(response.pending || 0, localStats.pending),
+      approved: Math.max(response.approved || 0, localStats.approved),
+      rejected: Math.max(response.rejected || 0, localStats.rejected),
+      revoked: Math.max(response.revoked || 0, localStats.revoked),
+      total: Math.max(response.total || 0, localStats.total),
+    };
     cache.statsExpiry = Date.now() + cache.TTL;
-    return response;
+    return cache.stats;
   } catch (error) {
     console.error('Error fetching instructor request stats:', error);
-    return { pending: 0, approved: 0, rejected: 0, revoked: 0, total: 0 };
+    return calculateStats(readStoredRequests());
   }
 }
 
