@@ -280,19 +280,14 @@ async function sendVerificationEmail(email, otp) {
   const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;"><h2>Verify your LevelUp email</h2><p>Your verification code is:</p><div style="font-size:32px;font-weight:700;letter-spacing:6px;padding:16px 20px;background:#f3f6ff;border-radius:12px;display:inline-block;">${escapeHtml(otp)}</div><p>This code expires in ${config.expiresMinutes} minutes.</p></div>`;
 
   if (hasSmtpAuthConfig()) {
-    try {
-      const transporter = createSmtpTransporter();
-      return await transporter.sendMail({
-        from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-        to: email,
-        subject,
-        text,
-        html,
-      });
-    } catch (error) {
-      if (!process.env.RESEND_API_KEY) throw error;
-      console.warn('Verification OTP SMTP failed; falling back to Resend:', error?.message || error);
-    }
+    const transporter = createSmtpTransporter();
+    return transporter.sendMail({
+      from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+      to: email,
+      subject,
+      text,
+      html,
+    });
   }
 
   if (process.env.RESEND_API_KEY) {
