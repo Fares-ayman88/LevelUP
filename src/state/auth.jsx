@@ -119,7 +119,7 @@ function toProfile(user = null) {
     status: `${user.status || 'active'}`.trim(),
     approved: role === 'admin' || user.approved === true || user.approved === 1,
     isActive: !user.status || `${user.status}`.trim().toLowerCase() === 'active',
-    emailOtpVerified: user.emailVerified === true || user.emailOtpVerified === true || user.emailOtpVerified === 1,
+    emailOtpVerified: user.isVerified === true || user.emailVerified === true || user.emailOtpVerified === true || user.emailOtpVerified === 1,
     emailOtpVerifiedAt: user.emailOtpVerifiedAt || null,
     createdAt: user.createdAt || null,
     updatedAt: user.updatedAt || null,
@@ -148,12 +148,15 @@ export function getVerificationEmail(user, profile = null) {
   return (profile?.email || user?.email || '').toString().trim().toLowerCase();
 }
 
-export function isEmailVerificationRequired() {
-  return false;
+export function isEmailVerificationRequired(user = null, profile = null) {
+  if (!user && !profile) return false;
+  const email = getVerificationEmail(user, profile);
+  if (isStaticAdminEmail(email)) return false;
+  return !isEmailOtpVerifiedProfile(profile) && user?.emailVerified !== true && user?.isVerified !== true;
 }
 
-export async function checkEmailVerificationRequirement() {
-  return false;
+export async function checkEmailVerificationRequirement(user = null, profile = null) {
+  return isEmailVerificationRequired(user, profile);
 }
 
 export function resolveAuthRole(profile, user = null) {
@@ -237,8 +240,12 @@ export async function signInWithEmail(email, password) {
 export async function signUpWithEmail(email, password, name = '') {
   return withGlobalLoading(async () => {
     const response = await levelupApi.signUp({ email, password, name });
-    emitAuthChanged();
-    return { user: toUser(response.user) };
+    if (response.token) emitAuthChanged();
+    return {
+      user: toUser(response.user),
+      email: response.user?.email || email,
+      pendingVerification: response.pendingVerification === true || response.data?.pendingVerification === true,
+    };
   }, 'Creating account...');
 }
 
@@ -301,18 +308,20 @@ export async function markEmailOtpVerified() {
 }
 
 export async function requestEmailVerificationCodeForUser(user) {
-  return {
-    ok: true,
-    email: (user?.email || '').toString().trim().toLowerCase(),
-    otpId: 'local-backend',
-    status: 'local_verified',
-  };
+  const email = (user?.email || user || '').toString().trim().toLowerCase();
+  await levelupApi.resendOtp({ email });
+  return { ok: true, email, status: 'otp_sent' };
 }
 
-export async function verifyEmailVerificationCodeForUser({ user } = {}) {
+export async function verifyEmailVerificationCodeForUser({ user, email, code, otp } = {}) {
+  const targetEmail = (email || user?.email || '').toString().trim().toLowerCase();
+  const response = await levelupApi.verifyOtp({ email: targetEmail, otp: otp || code });
+  emitAuthChanged();
   return {
     ok: true,
-    email: (user?.email || '').toString().trim().toLowerCase(),
+    email: targetEmail,
+    user: toUser(response.user),
+    profile: toProfile(response.user),
   };
 }
 

@@ -10,14 +10,12 @@ import {
   fetchUserProfile,
   getAuthErrorMessage,
   getVerificationEmail,
+  requestEmailVerificationCodeForUser,
   resolveStaticAdminAlias,
   signInStaticAdmin,
   signInWithEmail,
   signInWithGoogle,
-  signInWithGoogleCredential,
-  signOut as signOutCurrentUser,
 } from '../state/auth.jsx';
-import { GOOGLE_CLIENT_ID } from '../services/levelupApi.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -28,10 +26,8 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [googleButtonReady, setGoogleButtonReady] = useState(false);
   const consumedRouteState = useRef(false);
   const consumedGoogleRedirect = useRef(false);
-  const googleButtonRef = useRef(null);
   const normalizedEmail = email.trim();
   const canUseForgotPassword = EMAIL_PATTERN.test(normalizedEmail);
 
@@ -74,25 +70,16 @@ export default function SignIn() {
     }
     setLoading(true);
     try {
-      const result = await signInWithEmail(rawEmail, password);
-      const signedUser = result?.user;
-      if (!signedUser) {
-        toast.error('Could not verify this account right now.');
-        return;
-      }
-      const verificationRequired = await checkEmailVerificationRequirement(signedUser);
-      if (!verificationRequired) {
-        toast.info('This email is already verified. Use Sign In to continue.');
-        await signOutCurrentUser().catch(() => {});
-      } else {
-        navigate('/verify-email', {
-          replace: true,
-          state: {
-            email: getVerificationEmail(signedUser),
-            redirectTo: '/home',
-          },
-        });
-      }
+      await requestEmailVerificationCodeForUser(rawEmail);
+      sessionStorage.setItem('levelup_pending_verification_email', rawEmail.toLowerCase());
+      navigate('/verify-otp', {
+        replace: true,
+        state: {
+          email: rawEmail,
+          redirectTo: '/home',
+          message: 'A fresh verification OTP was sent to your email.',
+        },
+      });
     } catch (error) {
       toast.error(getAuthErrorMessage(error));
     } finally {
@@ -170,7 +157,7 @@ export default function SignIn() {
           : false;
         if (signedUser && verificationRequired) {
           toast.info('Enter the verification code from your email to finish signing in.');
-          navigate('/verify-email', {
+          navigate('/verify-otp', {
             replace: true,
             state: {
               email: getVerificationEmail(signedUser),
@@ -182,6 +169,18 @@ export default function SignIn() {
         await handleSuccess(result, { forceHome: true });
       }
     } catch (error) {
+      if (error?.code === 'EMAIL_NOT_VERIFIED' || `${error?.message || ''}`.includes('verify your email')) {
+        sessionStorage.setItem('levelup_pending_verification_email', rawEmail.toLowerCase());
+        navigate('/verify-otp', {
+          replace: true,
+          state: {
+            email: rawEmail,
+            redirectTo: '/home',
+            message: 'Please verify your email first.',
+          },
+        });
+        return;
+      }
       toast.error(getAuthErrorMessage(error));
     } finally {
       setLoading(false);
@@ -201,66 +200,6 @@ export default function SignIn() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!GOOGLE_CLIENT_ID || !googleButtonRef.current) return undefined;
-    if (window.google?.accounts?.id) {
-      renderGoogleButton();
-      return undefined;
-    }
-    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-    if (existingScript) {
-      existingScript.addEventListener('load', () => {
-        if (!cancelled) renderGoogleButton();
-      }, { once: true });
-      return () => {
-        cancelled = true;
-      };
-    }
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (!cancelled) renderGoogleButton();
-    };
-    document.head.appendChild(script);
-
-    function renderGoogleButton() {
-      if (!googleButtonRef.current || !window.google?.accounts?.id) return;
-      googleButtonRef.current.innerHTML = '';
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async (response) => {
-          if (!response?.credential || loading) return;
-          setLoading(true);
-          try {
-            const result = await signInWithGoogleCredential(response.credential);
-            await handleSuccess(result);
-          } catch (error) {
-            toast.error(getAuthErrorMessage(error));
-          } finally {
-            setLoading(false);
-          }
-        },
-      });
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        type: 'standard',
-        theme: 'outline',
-        size: 'large',
-        text: 'signin_with',
-        shape: 'rectangular',
-        logo_alignment: 'center',
-        width: 420,
-      });
-      setGoogleButtonReady(true);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
     <div className="app-shell auth-shell">
@@ -363,14 +302,12 @@ export default function SignIn() {
                 <div className="auth-divider auth-divider--fancy">Or Continue With</div>
 
                 <div className="auth-socials">
-                  <div ref={googleButtonRef} className="auth-google-rendered" />
                   <button
                     type="button"
                     className="auth-google-btn"
                     onClick={handleGoogle}
                     aria-label="Sign in with Google"
                     disabled={loading}
-                    hidden={googleButtonReady}
                   >
                     <span className="auth-google-btn__content">
                       <img

@@ -29,6 +29,14 @@ export const loginValidator = [
 
 export const emailValidator = [body('email').isEmail().normalizeEmail().withMessage('Valid email is required')];
 
+export const otpValidator = [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('otp')
+    .isString()
+    .matches(/^\d{6}$/)
+    .withMessage('OTP must be a 6-digit code'),
+];
+
 export const tokenValidator = [body('token').isString().isLength({ min: 32 }).withMessage('Valid token is required')];
 
 export const resetPasswordValidator = [

@@ -56,6 +56,30 @@ function makeId(prefix = '') {
   return `${prefix}${crypto.randomUUID().replace(/-/g, '')}`;
 }
 
+function getOtpConfig() {
+  return {
+    expiresMinutes: Number.parseInt(process.env.OTP_EXPIRES_MINUTES || '10', 10),
+    resendCooldownSeconds: Number.parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS || '60', 10),
+    maxAttempts: Number.parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10),
+  };
+}
+
+function generateOTP() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashOTP(otp, salt = crypto.randomBytes(16).toString('hex')) {
+  const digest = crypto.pbkdf2Sync(String(otp), salt, 120000, 32, 'sha256').toString('hex');
+  return `${salt}$${digest}`;
+}
+
+function compareOTP(otp, stored = '') {
+  const [salt, expected] = String(stored).split('$');
+  if (!salt || !expected) return false;
+  const candidate = hashOTP(otp, salt).split('$')[1];
+  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+}
+
 function makeGuestInstructorUserId(email) {
   const digest = crypto.createHash('sha256').update(String(email || '').toLowerCase()).digest('hex');
   return `guest_${digest.slice(0, 20)}`;
@@ -66,6 +90,7 @@ function getAdminEmail() {
     process.env.LEVELUP_ADMIN_EMAIL ||
     process.env.ADMIN_EMAIL ||
     process.env.SMTP_TO ||
+    process.env.EMAIL_USER ||
     process.env.SMTP_USER ||
     ''
   ).trim();
@@ -80,7 +105,15 @@ function hasResendConfig() {
 }
 
 function hasSmtpConfig() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && getAdminEmail());
+  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
+  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+  return Boolean(process.env.SMTP_HOST && user && pass && getAdminEmail());
+}
+
+function hasVerificationEmailConfig() {
+  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
+  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+  return Boolean(process.env.RESEND_API_KEY || (process.env.SMTP_HOST && user && pass));
 }
 
 function maskEmail(value = '') {
@@ -100,7 +133,9 @@ function maskEmail(value = '') {
 
 function getSmtpConfigStatus() {
   const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
-  const from = process.env.SMTP_FROM || (process.env.SMTP_USER ? `LevelUp <${process.env.SMTP_USER}>` : '');
+  const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+  const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+  const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || (smtpUser ? `LevelUp <${smtpUser}>` : '');
 
   return {
     configured: hasResendConfig() || hasSmtpConfig(),
@@ -116,23 +151,23 @@ function getSmtpConfigStatus() {
       host: process.env.SMTP_HOST || '',
       port,
       secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
-      hasUser: Boolean(process.env.SMTP_USER),
-      user: maskEmail(process.env.SMTP_USER),
-      hasPass: Boolean(process.env.SMTP_PASS),
-      passLength: process.env.SMTP_PASS ? String(process.env.SMTP_PASS).length : 0,
-      hasFrom: Boolean(process.env.SMTP_FROM),
+      hasUser: Boolean(smtpUser),
+      user: maskEmail(smtpUser),
+      hasPass: Boolean(smtpPass),
+      passLength: smtpPass ? String(smtpPass).length : 0,
+      hasFrom: Boolean(process.env.EMAIL_FROM || process.env.SMTP_FROM),
       from: maskEmail(from),
     },
     host: process.env.SMTP_HOST || '',
     port,
     secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
-    hasUser: Boolean(process.env.SMTP_USER),
-    user: maskEmail(process.env.SMTP_USER),
-    hasPass: Boolean(process.env.SMTP_PASS),
-    passLength: process.env.SMTP_PASS ? String(process.env.SMTP_PASS).length : 0,
+    hasUser: Boolean(smtpUser),
+    user: maskEmail(smtpUser),
+    hasPass: Boolean(smtpPass),
+    passLength: smtpPass ? String(smtpPass).length : 0,
     hasAdminEmail: Boolean(getAdminEmail()),
     adminEmail: maskEmail(getAdminEmail()),
-    hasFrom: Boolean(process.env.SMTP_FROM),
+    hasFrom: Boolean(process.env.EMAIL_FROM || process.env.SMTP_FROM),
     from: maskEmail(from),
     deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
   };
@@ -175,14 +210,16 @@ function buildInstructorRequestEmail(item = {}) {
 
 function createSmtpTransporter() {
   const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
+  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
+  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
 
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
     secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user,
+      pass,
     },
   });
 }
@@ -196,7 +233,7 @@ async function sendInstructorRequestEmail(item) {
   const content = buildInstructorRequestEmail(item);
 
   return transporter.sendMail({
-    from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
+    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
     to: getAdminEmail(),
     replyTo: item.email || undefined,
     subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
@@ -232,6 +269,59 @@ async function sendInstructorRequestEmailWithResend(item) {
   return data;
 }
 
+async function sendVerificationEmail(email, otp) {
+  const config = getOtpConfig();
+  const subject = 'Your LevelUp verification code';
+  const text = `Welcome to LevelUp.\n\nYour email verification code is: ${otp}\n\nThis code expires in ${config.expiresMinutes} minutes. Do not share it with anyone.`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;"><h2>Verify your LevelUp email</h2><p>Your verification code is:</p><div style="font-size:32px;font-weight:700;letter-spacing:6px;padding:16px 20px;background:#f3f6ff;border-radius:12px;display:inline-block;">${escapeHtml(otp)}</div><p>This code expires in ${config.expiresMinutes} minutes.</p></div>`;
+
+  if (process.env.RESEND_API_KEY) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: getResendFrom(),
+        to: [email],
+        subject,
+        text,
+        html,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data?.message || data?.error || `Resend email failed: ${response.status}`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  const transporter = createSmtpTransporter();
+  return transporter.sendMail({
+    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || `LevelUp <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+    to: email,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function notifyVerificationOtp(email, otp) {
+  if (!hasVerificationEmailConfig()) {
+    console.warn('Verification OTP email skipped: outbound email is not configured.', { email });
+    return;
+  }
+  try {
+    await sendVerificationEmail(email, otp);
+  } catch (error) {
+    console.warn('Verification OTP email failed:', error?.message || error);
+  }
+}
+
 async function notifyInstructorRequest(item) {
   if (!hasResendConfig() && !hasSmtpConfig()) {
     console.warn('Instructor request email skipped: Resend/SMTP is not configured.');
@@ -248,8 +338,8 @@ function send(res, status, data) {
   res.status(status).json(data);
 }
 
-function bad(res, message, status = 400) {
-  send(res, status, { error: message });
+function bad(res, message, status = 400, code = '') {
+  send(res, status, { error: message, ...(code ? { code } : {}) });
 }
 
 async function handleDebug(req, res, parts, query) {
@@ -464,6 +554,7 @@ function signToken(user) {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = b64url(JSON.stringify({
     sub: user.id,
+    userId: user.id,
     email: user.email,
     role: user.role,
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14,
@@ -495,6 +586,7 @@ function publicUser(user = {}) {
     uid: safe.id,
     displayName: safe.name || '',
     emailVerified: Boolean(safe.email_otp_verified),
+    isVerified: Boolean(safe.email_otp_verified),
     emailOtpVerified: Boolean(safe.email_otp_verified),
     approved: Boolean(safe.approved),
     photoUrl: safe.photo_url || '',
@@ -534,11 +626,20 @@ async function initDb() {
         status text default 'active',
         approved boolean default false,
         photo_url text default '',
-        email_otp_verified boolean default true,
+        email_otp_verified boolean default false,
+        otp_hash text,
+        otp_expires_at timestamptz,
+        otp_last_sent_at timestamptz,
+        otp_attempts integer default 0,
         created_at timestamptz default now(),
         updated_at timestamptz default now()
       )
     `;
+    await sql`alter table users add column if not exists otp_hash text`;
+    await sql`alter table users add column if not exists otp_expires_at timestamptz`;
+    await sql`alter table users add column if not exists otp_last_sent_at timestamptz`;
+    await sql`alter table users add column if not exists otp_attempts integer default 0`;
+    await sql`alter table users alter column email_otp_verified set default false`;
     await sql`
       create table if not exists courses (
         id text primary key,
@@ -723,17 +824,28 @@ async function handleAuth(req, res, parts) {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
     const name = String(req.body?.name || req.body?.fullName || '').trim();
+    const requestedRole = String(req.body?.role || 'student').trim().toLowerCase();
+    const role = requestedRole === 'instructor' ? 'instructor' : 'student';
     if (!email.includes('@')) return bad(res, 'Valid email is required.');
     if (password.length < 6) return bad(res, 'Password must be at least 6 characters.');
     const id = makeId('usr_');
+    const otp = generateOTP();
+    const otpHash = hashOTP(otp);
+    const otpConfig = getOtpConfig();
+    const otpExpiresAt = new Date(Date.now() + otpConfig.expiresMinutes * 60 * 1000).toISOString();
     try {
       const rows = await sql`
-        insert into users (id, email, password_hash, name)
-        values (${id}, ${email}, ${hashPassword(password)}, ${name})
+        insert into users (id, email, password_hash, name, role, email_otp_verified, otp_hash, otp_expires_at, otp_last_sent_at, otp_attempts)
+        values (${id}, ${email}, ${hashPassword(password)}, ${name}, ${role}, false, ${otpHash}, ${otpExpiresAt}, now(), 0)
         returning *
       `;
       const user = rows[0];
-      return send(res, 201, { token: signToken(user), user: publicUser(user) });
+      await notifyVerificationOtp(email, otp);
+      return send(res, 201, {
+        pendingVerification: true,
+        message: 'Registration successful. Please verify your email first.',
+        user: publicUser(user),
+      });
     } catch {
       return bad(res, 'Email is already in use.', 409);
     }
@@ -747,7 +859,85 @@ async function handleAuth(req, res, parts) {
     if (!user || !verifyPassword(password, user.password_hash)) {
       return bad(res, 'Invalid email or password.', 401);
     }
+    if (!user.email_otp_verified) {
+      return bad(res, 'Please verify your email first', 403, 'EMAIL_NOT_VERIFIED');
+    }
     return send(res, 200, { token: signToken(user), user: publicUser(user) });
+  }
+
+  if (req.method === 'POST' && parts[1] === 'verify-otp') {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const otp = String(req.body?.otp || req.body?.code || '').trim();
+    const otpConfig = getOtpConfig();
+    if (!email.includes('@')) return bad(res, 'Valid email is required.');
+    if (!/^\d{6}$/.test(otp)) return bad(res, 'OTP must be a 6-digit code.');
+
+    const rows = await sql`select * from users where email = ${email} limit 1`;
+    const user = rows[0];
+    if (!user) return bad(res, 'User was not found', 404, 'USER_NOT_FOUND');
+    if (user.email_otp_verified) return bad(res, 'Email is already verified', 400, 'EMAIL_ALREADY_VERIFIED');
+    if ((user.otp_attempts || 0) >= otpConfig.maxAttempts) {
+      return bad(res, 'Maximum verification attempts exceeded. Please request a new OTP.', 429, 'OTP_ATTEMPTS_EXCEEDED');
+    }
+    if (!user.otp_hash || !user.otp_expires_at || new Date(user.otp_expires_at).getTime() <= Date.now()) {
+      return bad(res, 'OTP has expired. Please request a new OTP.', 400, 'OTP_EXPIRED');
+    }
+
+    if (!compareOTP(otp, user.otp_hash)) {
+      const nextAttempts = (user.otp_attempts || 0) + 1;
+      await sql`update users set otp_attempts = ${nextAttempts}, updated_at = now() where id = ${user.id}`;
+      if (nextAttempts >= otpConfig.maxAttempts) {
+        return bad(res, 'Maximum verification attempts exceeded. Please request a new OTP.', 429, 'OTP_ATTEMPTS_EXCEEDED');
+      }
+      return bad(res, 'Invalid OTP code', 400, 'INVALID_OTP');
+    }
+
+    const updatedRows = await sql`
+      update users set email_otp_verified = true,
+        otp_hash = null,
+        otp_expires_at = null,
+        otp_last_sent_at = null,
+        otp_attempts = 0,
+        updated_at = now()
+      where id = ${user.id}
+      returning *
+    `;
+    const verifiedUser = updatedRows[0];
+    return send(res, 200, { token: signToken(verifiedUser), user: publicUser(verifiedUser) });
+  }
+
+  if (req.method === 'POST' && parts[1] === 'resend-otp') {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const otpConfig = getOtpConfig();
+    if (!email.includes('@')) return bad(res, 'Valid email is required.');
+    const rows = await sql`select * from users where email = ${email} limit 1`;
+    const user = rows[0];
+    if (!user) return send(res, 202, { ok: true, message: 'If the email exists, a verification OTP will be sent.' });
+    if (user.email_otp_verified) return bad(res, 'Email is already verified', 400, 'EMAIL_ALREADY_VERIFIED');
+
+    const lastSentAt = user.otp_last_sent_at ? new Date(user.otp_last_sent_at).getTime() : 0;
+    const waitMs = otpConfig.resendCooldownSeconds * 1000 - (Date.now() - lastSentAt);
+    if (waitMs > 0) {
+      return send(res, 429, {
+        error: 'Please wait before requesting another OTP.',
+        code: 'OTP_RESEND_COOLDOWN',
+        retryAfterSeconds: Math.ceil(waitMs / 1000),
+      });
+    }
+
+    const otp = generateOTP();
+    const otpHash = hashOTP(otp);
+    const otpExpiresAt = new Date(Date.now() + otpConfig.expiresMinutes * 60 * 1000).toISOString();
+    await sql`
+      update users set otp_hash = ${otpHash},
+        otp_expires_at = ${otpExpiresAt},
+        otp_last_sent_at = now(),
+        otp_attempts = 0,
+        updated_at = now()
+      where id = ${user.id}
+    `;
+    await notifyVerificationOtp(email, otp);
+    return send(res, 202, { ok: true, message: 'Verification OTP sent.' });
   }
 
   if (req.method === 'POST' && parts[1] === 'google') {

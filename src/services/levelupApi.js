@@ -77,7 +77,7 @@ export const levelupApi = {
   },
   async signUp(payload) {
     const data = normalizeApiResponse(await request('/auth/register', { method: 'POST', body: payload, auth: false }));
-    setToken(data.token);
+    if (data.token) setToken(data.token);
     return data;
   },
   async signIn(payload) {
@@ -89,6 +89,14 @@ export const levelupApi = {
     const data = normalizeApiResponse(await request('/auth/google', { method: 'POST', body: payload, auth: false }));
     setToken(data.token);
     return data;
+  },
+  async verifyOtp(payload) {
+    const data = normalizeApiResponse(await request('/auth/verify-otp', { method: 'POST', body: payload, auth: false }));
+    setToken(data.token);
+    return data;
+  },
+  resendOtp(payload) {
+    return request('/auth/resend-otp', { method: 'POST', body: payload, auth: false });
   },
   me() {
     return request('/auth/me').then(normalizeApiResponse);

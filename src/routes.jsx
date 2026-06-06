@@ -63,6 +63,7 @@ export const routeConfig = [
   { path: '/', title: 'Root', component: RootRedirect },
   { path: '/sign-in', title: 'Sign In', component: SignIn },
   { path: '/sign-up', title: 'Sign Up', component: SignUp },
+  { path: '/verify-otp', title: 'Verify OTP', component: VerifyEmail },
   { path: '/verify-email', title: 'Verify Email', component: VerifyEmail },
   { path: '/fill-profile', title: 'Fill Profile', component: FillProfile },
   { path: '/create-pin', title: 'Create PIN', component: CreatePin },

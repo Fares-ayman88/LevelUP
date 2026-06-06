@@ -52,7 +52,7 @@ export default function SignUp() {
     try {
       const result = await signUpWithEmail(value, password, normalizedName);
       const uid = result?.user?.uid;
-      if (uid) {
+      if (uid && !result?.pendingVerification) {
         try {
           await saveUserProfile(uid, {
             name: normalizedName,
@@ -66,7 +66,9 @@ export default function SignUp() {
           toast.info('Account created. You can complete profile details later.');
         }
       }
-      navigate('/verify-email', {
+      sessionStorage.setItem('levelup_pending_verification_email', value.toLowerCase());
+      toast.info('Account created. Check your email for the OTP code.');
+      navigate('/verify-otp', {
         replace: true,
         state: {
           email: value,

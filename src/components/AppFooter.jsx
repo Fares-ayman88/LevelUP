@@ -4,6 +4,7 @@ import './AppFooter.css';
 const HIDDEN_ROUTE_PREFIXES = [
   '/sign-in',
   '/sign-up',
+  '/verify-otp',
   '/verify-email',
   '/fill-profile',
   '/create-pin',

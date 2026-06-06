@@ -20,13 +20,33 @@ const sendSession = (res, statusCode, user, session) => {
 
 export const authController = {
   register: asyncHandler(async (req, res) => {
-    const { user, session } = await authService.register(req.body, req);
-    sendSession(res, 201, user, session);
+    const { user } = await authService.register(req.body, req);
+    res.status(201).json({
+      status: 'success',
+      message: 'Registration successful. Please verify your email first.',
+      data: {
+        user: sanitizeUser(user),
+        pendingVerification: true,
+      },
+    });
   }),
 
   login: asyncHandler(async (req, res) => {
     const { user, session } = await authService.login(req.body, req);
     sendSession(res, 200, user, session);
+  }),
+
+  verifyOtp: asyncHandler(async (req, res) => {
+    const { user, session } = await authService.verifyOtp(req.body, req);
+    sendSession(res, 200, user, session);
+  }),
+
+  resendOtp: asyncHandler(async (req, res) => {
+    await authService.resendOtp(req.body.email);
+    res.status(202).json({
+      status: 'success',
+      message: 'If the email exists, a verification OTP will be sent.',
+    });
   }),
 
   logout: asyncHandler(async (req, res) => {

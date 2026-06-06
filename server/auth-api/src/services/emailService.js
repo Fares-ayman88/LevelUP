@@ -35,12 +35,12 @@ export class EmailService {
     });
   }
 
-  async sendVerificationEmail(user, token) {
-    const url = `${env.clientUrl}/verify-email?token=${token}`;
+  async sendVerificationEmail(emailOrUser, otp) {
+    const email = typeof emailOrUser === 'string' ? emailOrUser : emailOrUser.email;
     await this.sendMail({
-      to: user.email,
-      subject: 'Verify your LevelUp email',
-      text: `Welcome to LevelUp. Verify your email using this link: ${url}`,
+      to: email,
+      subject: 'Your LevelUp verification code',
+      text: `Welcome to LevelUp.\n\nYour email verification code is: ${otp}\n\nThis code expires in ${env.otpExpiresMinutes} minutes. Do not share it with anyone.`,
     });
   }
 

@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema(
       default: ROLES.STUDENT,
       index: true,
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     isEmailVerified: {
       type: Boolean,
       default: false,
@@ -54,6 +59,10 @@ const userSchema = new mongoose.Schema(
       default: 'active',
       index: true,
     },
+    otpHash: { type: String, select: false },
+    otpExpiresAt: { type: Date, select: false },
+    otpLastSentAt: { type: Date, select: false },
+    otpAttempts: { type: Number, default: 0, select: false },
     emailVerificationTokenHash: { type: String, select: false },
     emailVerificationExpiresAt: { type: Date, select: false },
     passwordResetTokenHash: { type: String, select: false },
@@ -77,6 +86,7 @@ userSchema.index({ email: 1, deletedAt: 1 });
 userSchema.index({ 'refreshTokens.tokenHash': 1 });
 userSchema.index({ passwordResetTokenHash: 1 }, { sparse: true });
 userSchema.index({ emailVerificationTokenHash: 1 }, { sparse: true });
+userSchema.index({ otpExpiresAt: 1 }, { sparse: true });
 
 userSchema.virtual('id').get(function getId() {
   return this._id.toString();
@@ -87,6 +97,7 @@ userSchema.set('toJSON', {
   transform(_doc, ret) {
     delete ret._id;
     delete ret.passwordHash;
+    delete ret.otpHash;
     delete ret.emailVerificationTokenHash;
     delete ret.passwordResetTokenHash;
     delete ret.refreshTokens;

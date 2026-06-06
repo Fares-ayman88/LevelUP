@@ -9,6 +9,7 @@ export class TokenService {
     return jwt.sign(
       {
         sub: user.id,
+        userId: user.id,
         role: user.role,
         email: user.email,
       },

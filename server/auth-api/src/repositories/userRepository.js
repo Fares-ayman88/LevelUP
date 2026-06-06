@@ -13,7 +13,7 @@ export class UserRepository {
     let query = User.findOne({ email: email.toLowerCase(), deletedAt: null });
     if (includeSecrets) {
       query = query.select(
-        '+passwordHash +refreshTokens +emailVerificationTokenHash +passwordResetTokenHash +emailVerificationExpiresAt +passwordResetExpiresAt',
+        '+passwordHash +refreshTokens +otpHash +otpExpiresAt +otpLastSentAt +otpAttempts +emailVerificationTokenHash +passwordResetTokenHash +emailVerificationExpiresAt +passwordResetExpiresAt',
       );
     }
     return query;
