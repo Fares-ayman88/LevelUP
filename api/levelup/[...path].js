@@ -34,6 +34,11 @@ const LOCAL_FALLBACK_ROOTS = new Set([
 let sqlClient = null;
 let readyPromise = null;
 
+const fallbackState = globalThis.__LEVELUP_FALLBACK_STATE__ || {
+  instructorRequests: [],
+};
+globalThis.__LEVELUP_FALLBACK_STATE__ = fallbackState;
+
 function getSql() {
   const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
   if (!url) {
@@ -254,6 +259,30 @@ async function handleDebug(req, res, parts, query) {
     return send(res, 200, getSmtpConfigStatus());
   }
 
+  if (parts[1] === 'storage') {
+    let postgresReady = false;
+    let instructorRequestCount = fallbackState.instructorRequests.length;
+    if (hasVercelDatabase()) {
+      try {
+        await initDb();
+        const sql = getSql();
+        const rows = await sql`select count(*)::int as count from instructor_requests`;
+        instructorRequestCount = rows[0]?.count ?? 0;
+        postgresReady = true;
+      } catch {
+        postgresReady = false;
+      }
+    }
+    return send(res, 200, {
+      databaseConfigured: hasVercelDatabase(),
+      postgresReady,
+      storage: postgresReady ? 'postgres' : 'memory-fallback',
+      instructorRequestCount,
+      fallbackCount: fallbackState.instructorRequests.length,
+      deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
+    });
+  }
+
   if (parts[1] === 'smtp-test') {
     const expected = process.env.LEVELUP_EMAIL_TEST_SECRET || '';
     const provided = String(query.secret || req.headers['x-levelup-test-secret'] || '');
@@ -310,7 +339,7 @@ function hasVercelDatabase() {
   return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 }
 
-function sendNoDatabaseFallback(req, res, parts) {
+async function sendNoDatabaseFallback(req, res, parts) {
   const root = parts[0] || '';
   if (root === 'notifications') {
     if (req.method === 'GET') return send(res, 200, { items: [] });
@@ -321,18 +350,44 @@ function sendNoDatabaseFallback(req, res, parts) {
     if (req.method === 'GET') return send(res, 200, { items: [] });
   }
   if (root === 'instructor-requests') {
-    if (req.method === 'GET') return send(res, 200, { items: [] });
-    if (req.method === 'POST') {
-      return send(res, 201, {
-        item: {
-          id: makeId('req_'),
-          ...(req.body || {}),
-          status: 'pending',
-          requestedAt: nowIso(),
-        },
-      });
+    if (req.method === 'GET' && parts[1] === 'stats') {
+      return send(res, 200, instructorRequestStats(fallbackState.instructorRequests));
     }
-    if (req.method === 'PATCH') return send(res, 200, { ok: true });
+    if (req.method === 'GET') {
+      const status = new URL(req.url || '/api/levelup', `https://${req.headers.host || 'localhost'}`).searchParams.get('status');
+      const items = status
+        ? fallbackState.instructorRequests.filter((item) => item.status === status)
+        : fallbackState.instructorRequests;
+      return send(res, 200, { items });
+    }
+    if (req.method === 'POST') {
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const userId = String(req.body?.userId || '').trim() || makeGuestInstructorUserId(email);
+      const existingIndex = fallbackState.instructorRequests.findIndex((item) => item.userId === userId);
+      const item = {
+        id: existingIndex >= 0 ? fallbackState.instructorRequests[existingIndex].id : makeId('irq_'),
+        ...(req.body || {}),
+        userId,
+        email,
+        status: 'pending',
+        requestedAt: existingIndex >= 0 ? fallbackState.instructorRequests[existingIndex].requestedAt : nowIso(),
+        updatedAt: nowIso(),
+        storage: 'memory-fallback',
+      };
+      if (existingIndex >= 0) fallbackState.instructorRequests[existingIndex] = item;
+      else fallbackState.instructorRequests.unshift(item);
+      await notifyInstructorRequest(item);
+      return send(res, existingIndex >= 0 ? 200 : 201, { item });
+    }
+    if (req.method === 'PATCH' && parts[1] && parts[2] === 'status') {
+      const status = String(req.body?.status || 'pending').trim();
+      const item = fallbackState.instructorRequests.find((request) => request.id === parts[1]);
+      if (!item) return bad(res, 'Not found.', 404);
+      item.status = status;
+      item.updatedAt = nowIso();
+      item.resolvedAt = status === 'pending' ? null : nowIso();
+      return send(res, 200, { item });
+    }
   }
   if (root === 'chats' || root === 'transactions') {
     if (req.method === 'GET') return send(res, 200, { items: [] });
@@ -340,6 +395,15 @@ function sendNoDatabaseFallback(req, res, parts) {
     if (req.method === 'PATCH') return send(res, 200, { ok: true });
   }
   return bad(res, 'This feature is not configured yet.', 503);
+}
+
+function instructorRequestStats(items = []) {
+  const stats = { pending: 0, approved: 0, rejected: 0, revoked: 0, total: items.length };
+  for (const item of items) {
+    const status = String(item.status || 'pending').trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(stats, status)) stats[status] += 1;
+  }
+  return stats;
 }
 
 async function proxyToMonsterAsp(req, res) {
@@ -850,6 +914,22 @@ async function handleTransactions(req, res, parts, query) {
 async function handleInstructorRequests(req, res, parts, query) {
   const sql = getSql();
   const id = parts[1] || '';
+  if (req.method === 'GET' && parts[1] === 'stats') {
+    const user = await requireAdminish(req, res);
+    if (!user) return;
+    const rows = await sql`
+      select status, count(*)::int as count
+      from instructor_requests
+      group by status
+    `;
+    const stats = { pending: 0, approved: 0, rejected: 0, revoked: 0, total: 0 };
+    for (const row of rows) {
+      const status = String(row.status || 'pending');
+      if (Object.prototype.hasOwnProperty.call(stats, status)) stats[status] = row.count;
+      stats.total += row.count;
+    }
+    return send(res, 200, stats);
+  }
   if (req.method === 'GET') {
     const user = await requireAdminish(req, res);
     if (!user) return;
@@ -1054,11 +1134,11 @@ export default async function handler(req, res) {
     }
 
     if (LOCAL_FALLBACK_ROOTS.has(parts[0] || '')) {
-      return sendNoDatabaseFallback(req, res, parts);
+      return await sendNoDatabaseFallback(req, res, parts);
     }
 
     if (!hasVercelDatabase()) {
-      return sendNoDatabaseFallback(req, res, parts);
+      return await sendNoDatabaseFallback(req, res, parts);
     }
 
     await initDb();
