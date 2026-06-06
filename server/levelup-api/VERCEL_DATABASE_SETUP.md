@@ -1,70 +1,113 @@
-# Vercel Production Database
+# Vercel Production Database Setup
 
-النسخة المنشورة على Vercel لا تستخدم SQLite المحلي. استخدم Postgres serverless مثل Neon.
+LevelUP uses the Vercel serverless API at `/api/levelup` in production.
+For stable instructor requests, admin approvals, users, transactions, chats, and notifications, Vercel must have a persistent Postgres database.
 
-## الخطوات
+Without `DATABASE_URL`, the API falls back to temporary memory storage. That is fine for a quick demo, but data can disappear after refresh, redeploy, or a new serverless instance.
 
-1. افتح مشروعك على Vercel.
-2. من تبويب `Storage` أو `Integrations` أضف Neon Postgres.
-3. اربط قاعدة البيانات بالمشروع.
-4. تأكد أن Vercel أضاف متغير:
+## Recommended Setup
+
+1. Open the Vercel project:
+   `level-up`
+
+2. Go to:
+   `Storage` -> `Create Database`
+
+3. Choose:
+   `Neon`
+
+4. Create a new Postgres database and connect it to the project.
+
+5. Vercel should add environment variables automatically. Confirm that one of these exists:
 
 ```env
 DATABASE_URL=postgres://...
+POSTGRES_URL=postgres://...
 ```
 
-5. أضف هذه المتغيرات في Vercel -> Project Settings -> Environment Variables:
+Prefer `DATABASE_URL` if Vercel gives you multiple connection strings. Use the pooled/serverless connection string when available.
+
+6. Keep this unset in Vercel unless you intentionally use an external backend:
 
 ```env
-LEVELUP_JWT_SECRET=ضع-سر-قوي-طويل
-LEVELUP_GOOGLE_CLIENT_ID=617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com
-VITE_GOOGLE_CLIENT_ID=617436995759-t2tp11j582kfupng4s4qcvbivoe0jj1p.apps.googleusercontent.com
+VITE_LEVELUP_API_URL
 ```
 
-6. لا تضف `VITE_LEVELUP_API_URL` على Vercel إلا لو الباك اند في دومين خارجي.
-   الافتراضي في production هو:
+Production should use the default internal API:
 
 ```text
 /api/levelup
 ```
 
-7. في Google Cloud OAuth Client أضف دومين Vercel:
+7. Make sure this variable is not set to false if you want to keep MonsterASP auth proxying:
 
-```text
-https://your-project.vercel.app
+```env
+LEVELUP_USE_MONSTERASP
 ```
 
-ولو عندك دومين مخصص:
+For the current Vercel/Postgres setup, remove it or set it only if you know which backend should own auth.
+
+8. Redeploy the Vercel project.
+
+## Verify
+
+After redeploy, open:
 
 ```text
-https://your-domain.com
+https://level-up-steel.vercel.app/api/levelup/debug/storage
 ```
 
-## ماذا يحدث تلقائيا؟
+Expected stable production result:
 
-أول request إلى:
-
-```text
-/api/levelup/health
+```json
+{
+  "databaseConfigured": true,
+  "postgresReady": true,
+  "storage": "postgres"
+}
 ```
 
-سيقوم بإنشاء الجداول تلقائيا وزراعة:
-
-- Admin users
-- Courses seed
-- Mentors seed
-
-## Endpoints
-
-نفس endpoints المحلية لكن على Vercel:
+Then open:
 
 ```text
-/api/levelup/auth/signup
-/api/levelup/auth/signin
-/api/levelup/auth/google
-/api/levelup/courses
-/api/levelup/mentors
-/api/levelup/transactions
-/api/levelup/notifications
-/api/levelup/chats
+https://level-up-steel.vercel.app/api/levelup/health
+```
+
+That first request initializes the tables automatically.
+
+## Tables Created Automatically
+
+The API creates these tables on startup:
+
+- `users`
+- `courses`
+- `mentors`
+- `transactions`
+- `instructor_requests`
+- `notifications`
+- `chats`
+- `chat_messages`
+- `files`
+
+It also bootstraps the static admin users:
+
+- `sa3doon@levelup.admin`
+- `fares@levelup.admin`
+- `mahmoud@levelup.admin`
+
+## Email
+
+Instructor request email notifications use Resend first when available:
+
+```env
+RESEND_API_KEY=...
+RESEND_FROM=LevelUP <onboarding@resend.dev>
+LEVELUP_ADMIN_EMAIL=faresymen88@gmail.com
+LEVELUP_EMAIL_TEST_SECRET=test123
+```
+
+Test email:
+
+```text
+https://level-up-steel.vercel.app/api/levelup/debug/smtp-test?secret=test123
 ```
