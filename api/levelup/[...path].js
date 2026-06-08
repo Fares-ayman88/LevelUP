@@ -94,21 +94,20 @@ function getAdminEmail() {
     process.env.LEVELUP_ADMIN_EMAIL ||
     process.env.ADMIN_EMAIL ||
     process.env.SMTP_TO ||
-    process.env.EMAIL_USER ||
     process.env.SMTP_USER ||
     ''
   ).trim();
 }
 
 function hasSmtpConfig() {
-  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
   return Boolean(process.env.SMTP_HOST && user && pass && getAdminEmail());
 }
 
 function hasSmtpAuthConfig() {
-  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
   return Boolean(process.env.SMTP_HOST && user && pass);
 }
 
@@ -133,9 +132,9 @@ function maskEmail(value = '') {
 
 function getSmtpConfigStatus() {
   const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
-  const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
-  const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
-  const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || (smtpUser ? `LevelUp <${smtpUser}>` : '');
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const from = process.env.SMTP_FROM || (smtpUser ? `LevelUp <${smtpUser}>` : '');
 
   return {
     configured: hasSmtpConfig(),
@@ -149,7 +148,7 @@ function getSmtpConfigStatus() {
       user: maskEmail(smtpUser),
       hasPass: Boolean(smtpPass),
       passLength: smtpPass ? String(smtpPass).length : 0,
-      hasFrom: Boolean(process.env.EMAIL_FROM || process.env.SMTP_FROM),
+      hasFrom: Boolean(process.env.SMTP_FROM),
       from: maskEmail(from),
     },
     host: process.env.SMTP_HOST || '',
@@ -161,7 +160,7 @@ function getSmtpConfigStatus() {
     passLength: smtpPass ? String(smtpPass).length : 0,
     hasAdminEmail: Boolean(getAdminEmail()),
     adminEmail: maskEmail(getAdminEmail()),
-    hasFrom: Boolean(process.env.EMAIL_FROM || process.env.SMTP_FROM),
+    hasFrom: Boolean(process.env.SMTP_FROM),
     from: maskEmail(from),
     deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
   };
@@ -204,8 +203,8 @@ function buildInstructorRequestEmail(item = {}) {
 
 function createSmtpTransporter() {
   const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
-  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
 
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -223,7 +222,7 @@ async function sendInstructorRequestEmail(item) {
   const content = buildInstructorRequestEmail(item);
 
   return transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
+    from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
     to: getAdminEmail(),
     replyTo: item.email || undefined,
     subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
@@ -248,7 +247,7 @@ async function sendVerificationEmailWithSmtp(email, content) {
 
   const transporter = createSmtpTransporter();
   return transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
+    from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
     to: email,
     subject: content.subject,
     text: content.text,
@@ -344,7 +343,7 @@ async function handleDebug(req, res, parts, query) {
     try {
       const transporter = createSmtpTransporter();
       const info = await transporter.sendMail({
-        from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
+        from: process.env.SMTP_FROM || `LevelUp <${process.env.SMTP_USER}>`,
         to: getAdminEmail(),
         subject: 'LevelUp forced SMTP test',
         text: 'This is a LevelUp forced SMTP test email.',
