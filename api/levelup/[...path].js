@@ -68,12 +68,6 @@ function shouldEnforceEmailVerification() {
   return String(process.env.LEVELUP_ENFORCE_EMAIL_VERIFICATION || '').toLowerCase() === 'true';
 }
 
-function getOtpEmailProvider() {
-  const provider = String(process.env.LEVELUP_OTP_EMAIL_PROVIDER || 'auto').trim().toLowerCase();
-  if (provider === 'smtp' || provider === 'resend') return provider;
-  return 'auto';
-}
-
 function generateOTP() {
   return String(crypto.randomInt(100000, 1000000));
 }
@@ -106,14 +100,6 @@ function getAdminEmail() {
   ).trim();
 }
 
-function getResendFrom() {
-  return (process.env.RESEND_FROM || process.env.EMAIL_FROM || 'LevelUP <onboarding@resend.dev>').trim();
-}
-
-function hasResendConfig() {
-  return Boolean(process.env.RESEND_API_KEY && getAdminEmail());
-}
-
 function hasSmtpConfig() {
   const user = process.env.SMTP_USER || process.env.EMAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
@@ -127,7 +113,7 @@ function hasSmtpAuthConfig() {
 }
 
 function hasVerificationEmailConfig() {
-  return Boolean(hasSmtpAuthConfig() || process.env.RESEND_API_KEY);
+  return hasSmtpAuthConfig();
 }
 
 function maskEmail(value = '') {
@@ -152,15 +138,8 @@ function getSmtpConfigStatus() {
   const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || (smtpUser ? `LevelUp <${smtpUser}>` : '');
 
   return {
-    configured: hasResendConfig() || hasSmtpConfig(),
-    provider: hasResendConfig() ? 'resend' : 'smtp',
-    otpProvider: getOtpEmailProvider(),
-    resend: {
-      configured: hasResendConfig(),
-      hasApiKey: Boolean(process.env.RESEND_API_KEY),
-      apiKeyLength: process.env.RESEND_API_KEY ? String(process.env.RESEND_API_KEY).length : 0,
-      from: maskEmail(getResendFrom()),
-    },
+    configured: hasSmtpConfig(),
+    provider: 'smtp',
     smtp: {
       configured: hasSmtpConfig(),
       host: process.env.SMTP_HOST || '',
@@ -240,10 +219,6 @@ function createSmtpTransporter() {
 }
 
 async function sendInstructorRequestEmail(item) {
-  if (hasResendConfig()) {
-    return sendInstructorRequestEmailWithResend(item);
-  }
-
   const transporter = createSmtpTransporter();
   const content = buildInstructorRequestEmail(item);
 
@@ -255,33 +230,6 @@ async function sendInstructorRequestEmail(item) {
     text: content.text,
     html: content.html,
   });
-}
-
-async function sendInstructorRequestEmailWithResend(item) {
-  const content = buildInstructorRequestEmail(item);
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: getResendFrom(),
-      to: [getAdminEmail()],
-      reply_to: item.email || undefined,
-      subject: `New instructor application: ${item.name || item.email || 'Candidate'}`,
-      text: content.text,
-      html: content.html,
-    }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data?.message || data?.error || `Resend email failed: ${response.status}`);
-    error.status = response.status;
-    error.data = data;
-    throw error;
-  }
-  return data;
 }
 
 function buildVerificationEmailContent(otp) {
@@ -308,65 +256,9 @@ async function sendVerificationEmailWithSmtp(email, content) {
   });
 }
 
-async function sendVerificationEmailWithResend(email, content) {
-  if (!process.env.RESEND_API_KEY) {
-    throw new Error('Resend verification email is not configured.');
-  }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: getResendFrom(),
-      to: [email],
-      subject: content.subject,
-      text: content.text,
-      html: content.html,
-    }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data?.message || data?.error || `Resend email failed: ${response.status}`);
-    error.status = response.status;
-    error.data = data;
-    throw error;
-  }
-  return data;
-}
-
 async function sendVerificationEmail(email, otp) {
   const content = buildVerificationEmailContent(otp);
-  const provider = getOtpEmailProvider();
-
-  if (provider === 'smtp') {
-    return sendVerificationEmailWithSmtp(email, content);
-  }
-
-  if (provider === 'resend') {
-    return sendVerificationEmailWithResend(email, content);
-  }
-
-  const errors = [];
-  if (process.env.RESEND_API_KEY) {
-    try {
-      return await sendVerificationEmailWithResend(email, content);
-    } catch (error) {
-      errors.push(`Resend: ${error?.message || 'failed'}`);
-    }
-  }
-  if (hasSmtpAuthConfig()) {
-    try {
-      return await sendVerificationEmailWithSmtp(email, content);
-    } catch (error) {
-      errors.push(`SMTP: ${error?.message || 'failed'}`);
-    }
-  }
-  if (errors.length) throw new Error(errors.join(' | '));
-
-  throw new Error('Verification email is not configured.');
+  return sendVerificationEmailWithSmtp(email, content);
 }
 
 async function notifyVerificationOtp(email, otp) {
@@ -384,8 +276,8 @@ async function notifyVerificationOtp(email, otp) {
 }
 
 async function notifyInstructorRequest(item) {
-  if (!hasResendConfig() && !hasSmtpConfig()) {
-    console.warn('Instructor request email skipped: Resend/SMTP is not configured.');
+  if (!hasSmtpConfig()) {
+    console.warn('Instructor request email skipped: SMTP is not configured.');
     return;
   }
   try {
