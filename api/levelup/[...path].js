@@ -64,6 +64,10 @@ function getOtpConfig() {
   };
 }
 
+function shouldEnforceEmailVerification() {
+  return String(process.env.LEVELUP_ENFORCE_EMAIL_VERIFICATION || '').toLowerCase() === 'true';
+}
+
 function generateOTP() {
   return String(crypto.randomInt(100000, 1000000));
 }
@@ -904,7 +908,7 @@ async function handleAuth(req, res, parts) {
     if (!user || !verifyPassword(password, user.password_hash)) {
       return bad(res, 'Invalid email or password.', 401);
     }
-    if (!user.email_otp_verified) {
+    if (shouldEnforceEmailVerification() && !user.email_otp_verified) {
       return bad(res, 'Please verify your email first', 403, 'EMAIL_NOT_VERIFIED');
     }
     return send(res, 200, { token: signToken(user), user: publicUser(user) });
