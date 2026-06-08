@@ -20,6 +20,8 @@ export { isStaticAdminAlias, isStaticAdminEmail };
 
 const AUTH_CHANGED_EVENT = 'levelup-api-auth-changed';
 const GOOGLE_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
+const EMAIL_VERIFICATION_ENFORCED =
+  `${import.meta.env.VITE_LEVELUP_ENFORCE_EMAIL_VERIFICATION || ''}`.trim().toLowerCase() === 'true';
 
 function loadGoogleIdentityScript() {
   return new Promise((resolve, reject) => {
@@ -149,6 +151,7 @@ export function getVerificationEmail(user, profile = null) {
 }
 
 export function isEmailVerificationRequired(user = null, profile = null) {
+  if (!EMAIL_VERIFICATION_ENFORCED) return false;
   if (!user && !profile) return false;
   const email = getVerificationEmail(user, profile);
   if (isStaticAdminEmail(email)) return false;

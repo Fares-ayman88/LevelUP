@@ -11,6 +11,7 @@ import {
 const VERIFY_COOLDOWN_SECONDS = 60;
 const OTP_PATTERN = /^\d{6}$/;
 const PENDING_EMAIL_KEY = 'levelup_pending_verification_email';
+const LEGACY_VERIFY_EMAIL_PATH = '/verify-email';
 
 const SHOWCASE_CHIPS = ['Hashed OTP', '10 min expiry', 'Attempt limits'];
 const SHOWCASE_METRICS = [
@@ -54,6 +55,11 @@ export default function VerifyEmail() {
   const [cooldownSeconds, setCooldownSeconds] = useState(() => (getInitialEmail(location) ? VERIFY_COOLDOWN_SECONDS : 0));
 
   const displayEmail = useMemo(() => email || 'your email address', [email]);
+
+  useEffect(() => {
+    if (location.pathname !== LEGACY_VERIFY_EMAIL_PATH) return;
+    navigate('/sign-in', { replace: true, state: email ? { email } : {} });
+  }, [email, location.pathname, navigate]);
 
   useEffect(() => {
     if (!email) return;
