@@ -235,6 +235,13 @@ export default function VerifyEmail() {
                     ? `Resend OTP in ${cooldownSeconds}s`
                     : 'Resend OTP'}
               </button>
+              <button
+                type="button"
+                className="forgot-reset-panel__ghost"
+                onClick={() => navigate('/sign-in', { replace: true, state: email ? { email } : {} })}
+              >
+                Continue to login
+              </button>
             </div>
           </div>
 

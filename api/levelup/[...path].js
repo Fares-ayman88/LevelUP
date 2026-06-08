@@ -888,6 +888,16 @@ async function handleAuth(req, res, parts) {
       `;
       const user = rows[0];
       const delivery = await notifyVerificationOtp(email, otp);
+      if (!shouldEnforceEmailVerification()) {
+        return send(res, 201, {
+          token: signToken(user),
+          pendingVerification: false,
+          emailDelivery: delivery.ok ? 'sent' : 'failed',
+          emailDeliveryError: delivery.ok ? undefined : delivery.error,
+          message: 'Registration successful.',
+          user: publicUser(user),
+        });
+      }
       return send(res, 201, {
         pendingVerification: true,
         emailDelivery: delivery.ok ? 'sent' : 'failed',

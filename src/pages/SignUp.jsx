@@ -66,6 +66,11 @@ export default function SignUp() {
           toast.info('Account created. You can complete profile details later.');
         }
       }
+      if (!result?.pendingVerification) {
+        toast.success('Account created successfully.');
+        navigate('/home', { replace: true });
+        return;
+      }
       sessionStorage.setItem('levelup_pending_verification_email', value.toLowerCase());
       if (result?.emailDelivery === 'failed') {
         toast.error('Account created, but the OTP email could not be sent. Fix email settings, then use Resend OTP.');
