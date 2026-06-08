@@ -68,6 +68,12 @@ function shouldEnforceEmailVerification() {
   return String(process.env.LEVELUP_ENFORCE_EMAIL_VERIFICATION || '').toLowerCase() === 'true';
 }
 
+function getOtpEmailProvider() {
+  const provider = String(process.env.LEVELUP_OTP_EMAIL_PROVIDER || 'auto').trim().toLowerCase();
+  if (provider === 'smtp' || provider === 'resend') return provider;
+  return 'auto';
+}
+
 function generateOTP() {
   return String(crypto.randomInt(100000, 1000000));
 }
@@ -148,6 +154,7 @@ function getSmtpConfigStatus() {
   return {
     configured: hasResendConfig() || hasSmtpConfig(),
     provider: hasResendConfig() ? 'resend' : 'smtp',
+    otpProvider: getOtpEmailProvider(),
     resend: {
       configured: hasResendConfig(),
       hasApiKey: Boolean(process.env.RESEND_API_KEY),
@@ -277,47 +284,87 @@ async function sendInstructorRequestEmailWithResend(item) {
   return data;
 }
 
-async function sendVerificationEmail(email, otp) {
+function buildVerificationEmailContent(otp) {
   const config = getOtpConfig();
-  const subject = 'Your LevelUp verification code';
-  const text = `Welcome to LevelUp.\n\nYour email verification code is: ${otp}\n\nThis code expires in ${config.expiresMinutes} minutes. Do not share it with anyone.`;
-  const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;"><h2>Verify your LevelUp email</h2><p>Your verification code is:</p><div style="font-size:32px;font-weight:700;letter-spacing:6px;padding:16px 20px;background:#f3f6ff;border-radius:12px;display:inline-block;">${escapeHtml(otp)}</div><p>This code expires in ${config.expiresMinutes} minutes.</p></div>`;
+  return {
+    subject: 'Your LevelUp verification code',
+    text: `Welcome to LevelUp.\n\nYour email verification code is: ${otp}\n\nThis code expires in ${config.expiresMinutes} minutes. Do not share it with anyone.`,
+    html: `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;"><h2>Verify your LevelUp email</h2><p>Your verification code is:</p><div style="font-size:32px;font-weight:700;letter-spacing:6px;padding:16px 20px;background:#f3f6ff;border-radius:12px;display:inline-block;">${escapeHtml(otp)}</div><p>This code expires in ${config.expiresMinutes} minutes.</p></div>`,
+  };
+}
 
-  if (hasSmtpAuthConfig()) {
-    const transporter = createSmtpTransporter();
-    return transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
-      to: email,
-      subject,
-      text,
-      html,
-    });
+async function sendVerificationEmailWithSmtp(email, content) {
+  if (!hasSmtpAuthConfig()) {
+    throw new Error('SMTP verification email is not configured.');
   }
 
+  const transporter = createSmtpTransporter();
+  return transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
+    to: email,
+    subject: content.subject,
+    text: content.text,
+    html: content.html,
+  });
+}
+
+async function sendVerificationEmailWithResend(email, content) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('Resend verification email is not configured.');
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: getResendFrom(),
+      to: [email],
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.message || data?.error || `Resend email failed: ${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+async function sendVerificationEmail(email, otp) {
+  const content = buildVerificationEmailContent(otp);
+  const provider = getOtpEmailProvider();
+
+  if (provider === 'smtp') {
+    return sendVerificationEmailWithSmtp(email, content);
+  }
+
+  if (provider === 'resend') {
+    return sendVerificationEmailWithResend(email, content);
+  }
+
+  const errors = [];
   if (process.env.RESEND_API_KEY) {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: getResendFrom(),
-        to: [email],
-        subject,
-        text,
-        html,
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(data?.message || data?.error || `Resend email failed: ${response.status}`);
-      error.status = response.status;
-      error.data = data;
-      throw error;
+    try {
+      return await sendVerificationEmailWithResend(email, content);
+    } catch (error) {
+      errors.push(`Resend: ${error?.message || 'failed'}`);
     }
-    return data;
   }
+  if (hasSmtpAuthConfig()) {
+    try {
+      return await sendVerificationEmailWithSmtp(email, content);
+    } catch (error) {
+      errors.push(`SMTP: ${error?.message || 'failed'}`);
+    }
+  }
+  if (errors.length) throw new Error(errors.join(' | '));
 
   throw new Error('Verification email is not configured.');
 }
