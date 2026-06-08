@@ -1448,6 +1448,12 @@ export default async function handler(req, res) {
       return handleDebug(req, res, parts, query);
     }
 
+    if (parts[0] === 'auth') {
+      if (!hasVercelDatabase()) return await sendNoDatabaseFallback(req, res, parts);
+      await initDb();
+      return handleAuth(req, res, parts);
+    }
+
     if (shouldProxyToMonsterAsp(req)) {
       return await proxyToMonsterAsp(req, res);
     }
@@ -1463,7 +1469,6 @@ export default async function handler(req, res) {
     await initDb();
 
     if (!parts.length || parts[0] === 'health') return send(res, 200, { ok: true, time: nowIso(), database: 'postgres' });
-    if (parts[0] === 'auth') return handleAuth(req, res, parts);
     if (parts[0] === 'users' && parts[1] === 'me' && req.method === 'PATCH') return handleMe(req, res);
     if (parts[0] === 'courses') return handleCatalog(req, res, parts, 'courses', 'crs_');
     if (parts[0] === 'mentors') return handleCatalog(req, res, parts, 'mentors', 'mnt_');
