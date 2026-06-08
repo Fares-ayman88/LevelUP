@@ -7,6 +7,9 @@ import {
   useAuth,
 } from '../state/auth.jsx';
 
+const VERIFY_OTP_PATH = '/verify-otp';
+const LEGACY_VERIFY_EMAIL_PATH = '/verify-email';
+
 export default function EmailVerificationGate({ children }) {
   const location = useLocation();
   const { user, profile, loading } = useAuth();
@@ -23,10 +26,10 @@ export default function EmailVerificationGate({ children }) {
   const redirectTo =
     `${location.pathname}${location.search || ''}${location.hash || ''}` || '/home';
 
-  if (verificationRequired && location.pathname !== '/verify-email') {
+  if (verificationRequired && location.pathname !== VERIFY_OTP_PATH) {
     return (
       <Navigate
-        to="/verify-email"
+        to={VERIFY_OTP_PATH}
         replace
         state={{
           email: getVerificationEmail(user, profile),
@@ -36,7 +39,10 @@ export default function EmailVerificationGate({ children }) {
     );
   }
 
-  if (!verificationRequired && location.pathname === '/verify-email') {
+  if (
+    !verificationRequired &&
+    (location.pathname === LEGACY_VERIFY_EMAIL_PATH || location.pathname === VERIFY_OTP_PATH)
+  ) {
     return <Navigate to={location.state?.redirectTo || '/home'} replace />;
   }
 
