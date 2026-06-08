@@ -450,20 +450,18 @@ async function handleDebug(req, res, parts, query) {
     }
 
     try {
-      const info = await sendInstructorRequestEmail({
-        id: makeId('debug_'),
-        name: 'SMTP Test',
-        email: getAdminEmail(),
-        phone: 'test',
-        category: 'diagnostic',
-        coursesTaken: 'Diagnostic SMTP email',
-        experienceYears: '0',
-        notes: 'This is a LevelUp SMTP test email.',
-        status: 'test',
+      const transporter = createSmtpTransporter();
+      const info = await transporter.sendMail({
+        from: process.env.SMTP_FROM || process.env.EMAIL_FROM || `LevelUp <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
+        to: getAdminEmail(),
+        subject: 'LevelUp forced SMTP test',
+        text: 'This is a LevelUp forced SMTP test email.',
+        html: '<div style="font-family:Arial,sans-serif;color:#111827;"><h2>LevelUp forced SMTP test</h2><p>This email was sent using SMTP only.</p></div>',
       });
 
       return send(res, 200, {
         ok: true,
+        provider: 'smtp',
         result: {
           messageId: info.messageId,
           accepted: info.accepted || [],
