@@ -170,13 +170,26 @@ export default function SignIn() {
       }
     } catch (error) {
       if (error?.code === 'EMAIL_NOT_VERIFIED' || `${error?.message || ''}`.includes('verify your email')) {
+        let verificationMessage = 'Please verify your email first. Use the latest OTP from your inbox.';
+        try {
+          await requestEmailVerificationCodeForUser(rawEmail);
+          verificationMessage = 'A fresh verification OTP was sent to your email.';
+          toast.info('A fresh verification OTP was sent to your email.');
+        } catch (resendError) {
+          const retryAfter = Number(resendError?.data?.retryAfterSeconds || resendError?.data?.details?.retryAfterSeconds || 0);
+          if (retryAfter > 0) {
+            verificationMessage = `Please verify your email first. Use the latest OTP, or resend in ${retryAfter}s.`;
+          } else {
+            verificationMessage = 'Please verify your email first. Use Resend OTP if you did not receive the code.';
+          }
+        }
         sessionStorage.setItem('levelup_pending_verification_email', rawEmail.toLowerCase());
         navigate('/verify-otp', {
           replace: true,
           state: {
             email: rawEmail,
             redirectTo: '/home',
-            message: 'Please verify your email first.',
+            message: verificationMessage,
           },
         });
         return;
