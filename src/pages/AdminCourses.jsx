@@ -171,6 +171,7 @@ export default function AdminCourses({ isMentorMode = false }) {
 
   const [message, setMessage] = useState('');
   const [savingCourse, setSavingCourse] = useState(false);
+  const [courseUpload, setCourseUpload] = useState(null);
   const [savingMentor, setSavingMentor] = useState(false);
   const [busyDeleteId, setBusyDeleteId] = useState('');
   const [busyTxId, setBusyTxId] = useState('');
@@ -603,18 +604,58 @@ export default function AdminCourses({ isMentorMode = false }) {
       quizzes: quizResult,
     };
 
+    const updateUploadProgress = (progress = {}) => {
+      const percent = Math.max(0, Math.min(100, Math.round(Number(progress.percent) || 0)));
+      setCourseUpload({
+        title: resolvedTitle,
+        label: progress.label || 'Uploading course media',
+        percent,
+        filePercent: Math.max(0, Math.min(100, Math.round(Number(progress.filePercent) || percent))),
+        loadedBytes: progress.loadedBytes || 0,
+        totalBytes: progress.totalBytes || 0,
+        status: percent >= 100 ? 'done' : 'uploading',
+      });
+    };
+
     setSavingCourse(true);
+    setCourseUpload({
+      title: resolvedTitle,
+      label: 'Preparing course upload',
+      percent: 0,
+      filePercent: 0,
+      loadedBytes: 0,
+      totalBytes: 0,
+      status: 'uploading',
+    });
     try {
       if (editingCourseId) {
-        await updateCourse(editingCourseId, payload, { coverImageFile: coverImageFile || undefined, previousCoverUrl: initialCoverImagePath || '', lessonVideoUploads: sectionResult.lessonVideoUploads });
+        await updateCourse(editingCourseId, payload, {
+          coverImageFile: coverImageFile || undefined,
+          previousCoverUrl: initialCoverImagePath || '',
+          lessonVideoUploads: sectionResult.lessonVideoUploads,
+          onUploadProgress: updateUploadProgress,
+        });
         setMessage('Course updated.');
       } else {
-        await createCourse(payload, { coverImageFile: coverImageFile || undefined, lessonVideoUploads: sectionResult.lessonVideoUploads });
+        await createCourse(payload, {
+          coverImageFile: coverImageFile || undefined,
+          lessonVideoUploads: sectionResult.lessonVideoUploads,
+          onUploadProgress: updateUploadProgress,
+        });
         setMessage('Course added.');
       }
+      updateUploadProgress({ label: 'Course saved', percent: 100, filePercent: 100 });
       await loadCatalog();
       resetCourseForm();
+      window.setTimeout(() => {
+        setCourseUpload((current) => (current?.title === resolvedTitle ? null : current));
+      }, 1600);
     } catch (error) {
+      setCourseUpload((current) => ({
+        ...(current || { title: resolvedTitle, percent: 0 }),
+        label: error?.message || 'Upload failed',
+        status: 'error',
+      }));
       setMessage(error?.message || 'Could not save course.');
     } finally {
       setSavingCourse(false);
@@ -992,6 +1033,24 @@ export default function AdminCourses({ isMentorMode = false }) {
         ) : null}
       </div>
       <Toast message={message} onClose={() => setMessage('')} />
+      {courseUpload ? (
+        <div className={`course-upload-panel course-upload-panel--${courseUpload.status || 'uploading'}`} role="status" aria-live="polite">
+          <div className="course-upload-panel__mark">
+            {courseUpload.status === 'error' ? '!' : `${courseUpload.percent || 0}%`}
+          </div>
+          <div className="course-upload-panel__body">
+            <strong>{courseUpload.status === 'error' ? 'Course upload failed' : 'Course upload in progress'}</strong>
+            <span>{courseUpload.label}</span>
+            <div className="course-upload-panel__bar" aria-hidden>
+              <span style={{ width: `${courseUpload.status === 'error' ? 100 : courseUpload.percent || 0}%` }} />
+            </div>
+            <small>{courseUpload.title}</small>
+          </div>
+          {courseUpload.status === 'error' ? (
+            <button type="button" onClick={() => setCourseUpload(null)} aria-label="Dismiss upload error">Close</button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

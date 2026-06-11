@@ -195,18 +195,20 @@ function fileToDataUrl(file) {
   });
 }
 
-async function uploadBase64File(file) {
+async function uploadBase64File(file, resourceType = 'auto', onProgress) {
   if (!file) return '';
+  onProgress?.({ loaded: 0, total: file.size || 0, percent: 0 });
   const data = await fileToDataUrl(file);
   const response = await levelupApi.uploadBase64({
     data,
     filename: file.name || 'upload.bin',
     contentType: file.type || 'application/octet-stream',
   });
+  onProgress?.({ loaded: file.size || 1, total: file.size || 1, percent: 100 });
   return `${response?.url || ''}`.trim();
 }
 
-async function uploadFileToCloudinary(file, resourceType = 'auto') {
+async function uploadFileToCloudinary(file, resourceType = 'auto', onProgress) {
   if (!file) return '';
   const signature = await levelupApi.createCloudinaryUploadSignature({
     filename: file.name || 'course-upload',
@@ -226,32 +228,89 @@ async function uploadFileToCloudinary(file, resourceType = 'auto') {
   formData.append('public_id', signature.publicId);
 
   const uploadType = signature.resourceType || resourceType || 'auto';
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${signature.cloudName}/${uploadType}/upload`, {
-    method: 'POST',
-    body: formData,
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${signature.cloudName}/${uploadType}/upload`;
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', uploadUrl);
+    xhr.upload.onprogress = (event) => {
+      const total = event.lengthComputable ? event.total : file.size || 0;
+      const loaded = event.lengthComputable ? event.loaded : 0;
+      const percent = total ? Math.round((loaded / total) * 100) : 0;
+      onProgress?.({ loaded, total, percent });
+    };
+    xhr.onload = () => {
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText || '{}');
+      } catch {
+        data = {};
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const error = new Error(data?.error?.message || `Cloudinary upload failed: ${xhr.status}`);
+        error.status = xhr.status;
+        reject(error);
+        return;
+      }
+      onProgress?.({ loaded: file.size || 1, total: file.size || 1, percent: 100 });
+      resolve(`${data.secure_url || data.url || ''}`.trim());
+    };
+    xhr.onerror = () => reject(new Error('Cloudinary upload failed. Check Cloudinary upload settings and network access.'));
+    xhr.send(formData);
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error?.message || `Cloudinary upload failed: ${response.status}`);
+}
+
+async function uploadCourseFile(file, resourceType = 'auto', onProgress) {
+  try {
+    return await uploadFileToCloudinary(file, resourceType, onProgress);
+  } catch (error) {
+    if (error?.code === 'CLOUDINARY_NOT_CONFIGURED' || error?.status === 503) {
+      if (resourceType === 'video') {
+        throw new Error('Cloudinary is required for video uploads. Please configure Cloudinary environment variables and redeploy.');
+      }
+      return uploadBase64File(file, resourceType, onProgress);
+    }
+    throw error;
   }
-  return `${data.secure_url || data.url || ''}`.trim();
 }
 
-async function uploadCourseFile(file, resourceType = 'auto') {
-  return uploadBase64File(file, resourceType);
-}
-
-async function resolveCourseUploads(course, { coverImageFile, lessonVideoUploads = [] } = {}) {
+async function resolveCourseUploads(course, { coverImageFile, lessonVideoUploads = [], onUploadProgress } = {}) {
   let nextCourse = { ...course, sections: sanitizeSections(course.sections) };
+  const uploadItems = [
+    ...(coverImageFile ? [{ key: 'cover', label: 'Cover image', file: coverImageFile }] : []),
+    ...lessonVideoUploads
+      .filter((upload) => upload?.file)
+      .map((upload, index) => ({
+        key: `lesson-${upload.sectionIndex || 0}-${upload.lessonIndex || index}`,
+        label: `Lesson ${index + 1} video`,
+        file: upload.file,
+      })),
+  ];
+  const totalBytes = uploadItems.reduce((sum, item) => sum + (item.file?.size || 0), 0);
+  const loadedByKey = new Map();
+  const reportProgress = (key, label, progress = {}) => {
+    loadedByKey.set(key, Math.min(progress.loaded || 0, progress.total || uploadItems.find((item) => item.key === key)?.file?.size || 0));
+    const loadedBytes = Array.from(loadedByKey.values()).reduce((sum, loaded) => sum + loaded, 0);
+    const percent = totalBytes ? Math.min(99, Math.round((loadedBytes / totalBytes) * 100)) : progress.percent || 0;
+    onUploadProgress?.({
+      label,
+      loadedBytes,
+      totalBytes,
+      percent,
+      filePercent: progress.percent || 0,
+    });
+  };
 
   if (coverImageFile) {
-    const coverUrl = await uploadCourseFile(coverImageFile, 'image');
+    const coverUrl = await uploadCourseFile(coverImageFile, 'image', (progress) => reportProgress('cover', 'Uploading cover image', progress));
     if (coverUrl) nextCourse.coverImagePath = coverUrl;
   }
 
-  for (const upload of lessonVideoUploads) {
+  for (let index = 0; index < lessonVideoUploads.length; index += 1) {
+    const upload = lessonVideoUploads[index];
     if (!upload?.file) continue;
-    const videoUrl = await uploadCourseFile(upload.file, 'video');
+    const key = `lesson-${upload.sectionIndex || 0}-${upload.lessonIndex || index}`;
+    const videoUrl = await uploadCourseFile(upload.file, 'video', (progress) => reportProgress(key, `Uploading lesson ${index + 1} video`, progress));
     if (!videoUrl) continue;
     nextCourse = {
       ...nextCourse,
@@ -264,6 +323,13 @@ async function resolveCourseUploads(course, { coverImageFile, lessonVideoUploads
     };
   }
 
+  onUploadProgress?.({
+    label: 'Saving course details',
+    loadedBytes: totalBytes,
+    totalBytes,
+    percent: uploadItems.length ? 99 : 0,
+    filePercent: 100,
+  });
   return nextCourse;
 }
 
@@ -709,31 +775,31 @@ export async function subscribeMentors(onChange, onError) {
 
 export async function createCourse(
   course,
-  { coverImageFile, lessonVideoUploads = [], onLessonUploadProgress } = {}
+  { coverImageFile, lessonVideoUploads = [], onUploadProgress, onLessonUploadProgress } = {}
 ) {
-  return withGlobalLoading(async () => {
-    const resolvedCourse = await resolveCourseUploads(course, { coverImageFile, lessonVideoUploads });
-    const payload = sanitizeCoursePayload(resolvedCourse);
-    const response = await levelupApi.courses.create(payload);
-    const mapped = mapCourse(null, response.item);
-    invalidateCoursesQuery();
-    return mapped;
-  }, 'Saving course...');
+  const handleProgress = onUploadProgress || onLessonUploadProgress;
+  const resolvedCourse = await resolveCourseUploads(course, { coverImageFile, lessonVideoUploads, onUploadProgress: handleProgress });
+  const payload = sanitizeCoursePayload(resolvedCourse);
+  const response = await levelupApi.courses.create(payload);
+  const mapped = mapCourse(null, response.item);
+  invalidateCoursesQuery();
+  handleProgress?.({ label: 'Course saved', percent: 100, filePercent: 100 });
+  return mapped;
 }
 
 export async function updateCourse(
   courseId,
   course,
-  { coverImageFile, previousCoverUrl = '', lessonVideoUploads = [], onLessonUploadProgress } = {}
+  { coverImageFile, previousCoverUrl = '', lessonVideoUploads = [], onUploadProgress, onLessonUploadProgress } = {}
 ) {
-  return withGlobalLoading(async () => {
-    const resolvedCourse = await resolveCourseUploads(course, { coverImageFile, lessonVideoUploads });
-    const payload = sanitizeCoursePayload(resolvedCourse);
-    const response = await levelupApi.courses.update(courseId, payload);
-    const mapped = mapCourse(null, response.item);
-    invalidateCoursesQuery();
-    return mapped;
-  }, 'Updating course...');
+  const handleProgress = onUploadProgress || onLessonUploadProgress;
+  const resolvedCourse = await resolveCourseUploads(course, { coverImageFile, lessonVideoUploads, onUploadProgress: handleProgress });
+  const payload = sanitizeCoursePayload(resolvedCourse);
+  const response = await levelupApi.courses.update(courseId, payload);
+  const mapped = mapCourse(null, response.item);
+  invalidateCoursesQuery();
+  handleProgress?.({ label: 'Course saved', percent: 100, filePercent: 100 });
+  return mapped;
 }
 
 export async function deleteCourse(courseId) {
