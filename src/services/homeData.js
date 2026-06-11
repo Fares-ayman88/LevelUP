@@ -238,14 +238,7 @@ async function uploadFileToCloudinary(file, resourceType = 'auto') {
 }
 
 async function uploadCourseFile(file, resourceType = 'auto') {
-  try {
-    return await uploadFileToCloudinary(file, resourceType);
-  } catch (error) {
-    if (error?.code === 'CLOUDINARY_NOT_CONFIGURED' || error?.status === 503) {
-      return uploadBase64File(file);
-    }
-    throw error;
-  }
+  return uploadBase64File(file, resourceType);
 }
 
 async function resolveCourseUploads(course, { coverImageFile, lessonVideoUploads = [] } = {}) {
