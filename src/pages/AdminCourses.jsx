@@ -15,8 +15,9 @@ import {
   updateCourse,
   updateMentor,
 } from '../services/homeData.js';
-import { subscribeAdminTransactions, updateTransactionStatus } from '../services/transactions.js';
+import { subscribeAdminTransactions, subscribeMentorTransactions, updateTransactionStatus } from '../services/transactions.js';
 import { useAuth } from '../state/auth.jsx';
+import './AdminCourses.css';
 
 const STATUS = {
   paid: { label: 'Paid', color: '#1F7C64' },
@@ -37,6 +38,10 @@ const fmtStudents = (v = '') => {
 };
 const stripPrice = (v = '') => `${v}`.replace(/^\s*egp\s*/i, '').trim();
 const stripStudents = (v = '') => `${v}`.replace(/\s*std\s*/i, '').trim();
+const toNumber = (value) => {
+  const parsed = Number.parseFloat(`${value ?? ''}`.replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 const ytId = (v = '') => {
   const t = `${v || ''}`.trim();
@@ -57,6 +62,7 @@ const ytId = (v = '') => {
 const mkLesson = (i = 0, seed = {}) => {
   const rawVideo = `${seed.videoUrl || ''}`.trim();
   const isYt = rawVideo ? Boolean(ytId(rawVideo)) : false;
+  const durationMinutes = Math.max(0, Math.round(toNumber(seed.durationMinutes ?? seed.duration ?? seed.minutes)));
   return {
     id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     title: `${seed.title || ''}`.trim() || `Lesson ${i + 1}`,
@@ -64,6 +70,7 @@ const mkLesson = (i = 0, seed = {}) => {
     existingVideoUrl: isYt ? '' : rawVideo,
     videoFile: null,
     videoFileName: '',
+    durationMinutes: durationMinutes ? `${durationMinutes}` : '',
   };
 };
 
@@ -89,6 +96,75 @@ const fileNameFromUrl = (v = '') => {
   }
 };
 
+const mkQuizOption = (i = 0, value = '') => ({
+  id: `qo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
+  text: `${value || ''}`.trim(),
+});
+
+const mkQuizQuestion = (i = 0, seed = {}) => {
+  const sourceOptions = Array.isArray(seed.options) && seed.options.length
+    ? seed.options
+    : ['', '', '', ''];
+  const correctIndex = Number.parseInt(`${seed.correctIndex ?? seed.answerIndex ?? 0}`, 10);
+  return {
+    id: `qq_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
+    question: `${seed.question || seed.title || ''}`.trim(),
+    options: sourceOptions.slice(0, 6).map((option, idx) => (
+      typeof option === 'string' ? mkQuizOption(idx, option) : mkQuizOption(idx, option?.text)
+    )),
+    correctIndex: Number.isFinite(correctIndex) ? Math.max(0, correctIndex) : 0,
+  };
+};
+
+const sumDurationMinutes = (sections = []) => sections.reduce((sectionSum, section) => (
+  sectionSum + (Array.isArray(section.lessons) ? section.lessons : []).reduce((lessonSum, lesson) => (
+    lessonSum + Math.max(0, Math.round(toNumber(lesson.durationMinutes ?? lesson.duration)))
+  ), 0)
+), 0);
+
+const formatDuration = (minutes = 0) => {
+  const total = Math.max(0, Math.round(toNumber(minutes)));
+  if (!total) return '0 min';
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  if (!hours) return `${mins} min`;
+  if (!mins) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  return `${hours}h ${mins}m`;
+};
+
+const readVideoDurationMinutes = (file) => new Promise((resolve) => {
+  if (!file) return resolve(0);
+  const video = document.createElement('video');
+  const url = URL.createObjectURL(file);
+  const cleanup = () => URL.revokeObjectURL(url);
+  video.preload = 'metadata';
+  video.onloadedmetadata = () => {
+    const minutes = Math.max(1, Math.ceil((video.duration || 0) / 60));
+    cleanup();
+    resolve(Number.isFinite(minutes) ? minutes : 0);
+  };
+  video.onerror = () => {
+    cleanup();
+    resolve(0);
+  };
+  video.src = url;
+});
+
+const paidEnrollmentCount = (course = {}, transactions = []) => {
+  const courseId = `${course.id || ''}`.trim();
+  const courseTitle = keyOf(course.title);
+  const students = new Set();
+  for (const item of transactions || []) {
+    if (`${item.status || ''}`.trim().toLowerCase() !== 'paid') continue;
+    const matchesId = courseId && `${item.courseId || ''}`.trim() === courseId;
+    const matchesTitle = courseTitle && keyOf(item.courseTitle) === courseTitle;
+    if (!matchesId && !matchesTitle) continue;
+    const studentKey = `${item.userId || item.userEmail || item.userName || item.id || ''}`.trim();
+    if (studentKey) students.add(studentKey);
+  }
+  return students.size;
+};
+
 export default function AdminCourses({ isMentorMode = false }) {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
@@ -112,6 +188,7 @@ export default function AdminCourses({ isMentorMode = false }) {
   const [hours, setHours] = useState('');
   const [sections, setSections] = useState([mkSection(0)]);
   const [sectionsCount, setSectionsCount] = useState('1');
+  const [quizQuestions, setQuizQuestions] = useState([]);
 
   const [coverImageFile, setCoverImageFile] = useState(null);
   const [coverImagePath, setCoverImagePath] = useState('');
@@ -169,6 +246,8 @@ export default function AdminCourses({ isMentorMode = false }) {
       return myName && keyOf(item.mentorName) === keyOf(myName);
     });
   }, [courses, isMentorMode, profile, user?.uid]);
+  const computedDurationMinutes = useMemo(() => sumDurationMinutes(sections), [sections]);
+  const computedDurationLabel = useMemo(() => formatDuration(computedDurationMinutes), [computedDurationMinutes]);
 
   const loadCatalog = async () => {
     const [c, m] = await Promise.all([fetchCourses(), fetchMentors()]);
@@ -215,9 +294,12 @@ export default function AdminCourses({ isMentorMode = false }) {
   }, []);
 
   useEffect(() => {
-    if (isMentorMode) return () => {};
+    if (isMentorMode) {
+      if (!user?.uid) return () => {};
+      return subscribeMentorTransactions(user.uid, (items) => setTransactions(items || []), () => setTransactions([]));
+    }
     return subscribeAdminTransactions((items) => setTransactions(items || []), () => setTransactions([]));
-  }, [isMentorMode]);
+  }, [isMentorMode, user?.uid]);
 
   useEffect(() => setSectionsCount(`${sections.length}`), [sections.length]);
 
@@ -263,6 +345,7 @@ export default function AdminCourses({ isMentorMode = false }) {
     setInitialCoverImagePath('');
     setEditingCourseId('');
     setSections([mkSection(0)]);
+    setQuizQuestions([]);
     setShowCategoryInput(false);
     setNewCategory('');
   };
@@ -322,12 +405,40 @@ export default function AdminCourses({ isMentorMode = false }) {
         lessons: s.lessons.map((l) => (l.id === lessonId ? { ...l, videoFile: file, videoFileName: file.name || '', existingVideoUrl: '', videoUrl: '' } : l)),
       };
     }));
+    readVideoDurationMinutes(file).then((minutes) => {
+      if (!minutes) return;
+      updateLessonField(sectionId, lessonId, 'durationMinutes', `${minutes}`);
+    });
   };
 
   const clearLessonVideo = (sectionId, lessonId) => setSections((prev) => prev.map((s) => {
     if (s.id !== sectionId) return s;
     return { ...s, lessons: s.lessons.map((l) => (l.id === lessonId ? { ...l, videoFile: null, videoFileName: '', existingVideoUrl: '' } : l)) };
   }));
+
+  const addQuizQuestion = () => setQuizQuestions((prev) => [...prev, mkQuizQuestion(prev.length)]);
+  const removeQuizQuestion = (questionId) => setQuizQuestions((prev) => prev.filter((question) => question.id !== questionId));
+  const updateQuizQuestion = (questionId, value) => {
+    setQuizQuestions((prev) => prev.map((question) => (
+      question.id === questionId ? { ...question, question: value } : question
+    )));
+  };
+  const updateQuizOption = (questionId, optionIndex, value) => {
+    setQuizQuestions((prev) => prev.map((question) => {
+      if (question.id !== questionId) return question;
+      return {
+        ...question,
+        options: question.options.map((option, idx) => (
+          idx === optionIndex ? { ...option, text: value } : option
+        )),
+      };
+    }));
+  };
+  const setQuizAnswer = (questionId, optionIndex) => {
+    setQuizQuestions((prev) => prev.map((question) => (
+      question.id === questionId ? { ...question, correctIndex: optionIndex } : question
+    )));
+  };
 
   const buildSectionsForSave = () => {
     if (!sections.length) return setMessage('Add at least one section.'), null;
@@ -351,7 +462,8 @@ export default function AdminCourses({ isMentorMode = false }) {
         const hasLocal = Boolean(lesson.videoFile);
         if (!hasLocal && rawVideo && !ytId(rawVideo)) return setMessage(`Enter a valid YouTube link for "${lessonTitle}".`), null;
         const resolvedVideo = hasLocal ? existingVideo : rawVideo || existingVideo;
-        lessons.push({ title: lessonTitle, videoUrl: resolvedVideo });
+        const durationMinutes = Math.max(0, Math.round(toNumber(lesson.durationMinutes)));
+        lessons.push({ title: lessonTitle, videoUrl: resolvedVideo, durationMinutes });
         if (hasLocal) lessonVideoUploads.push({ sectionIndex: sIdx, lessonIndex: lIdx, file: lesson.videoFile });
       }
       totalLessons += lessons.length;
@@ -362,15 +474,38 @@ export default function AdminCourses({ isMentorMode = false }) {
     return { sections: outSections, lessonVideoUploads };
   };
 
+  const buildQuizForSave = () => {
+    const result = [];
+    for (let idx = 0; idx < quizQuestions.length; idx += 1) {
+      const item = quizQuestions[idx];
+      const question = `${item.question || ''}`.trim();
+      const options = (Array.isArray(item.options) ? item.options : [])
+        .map((option) => `${option?.text || ''}`.trim())
+        .filter(Boolean);
+      const hasAnyValue = Boolean(question) || options.length > 0;
+      if (!hasAnyValue) continue;
+      if (!question) return setMessage(`Enter question ${idx + 1}.`), null;
+      if (options.length < 2) return setMessage(`Question ${idx + 1} needs at least two answers.`), null;
+      const correctIndex = Math.min(Math.max(Number.parseInt(`${item.correctIndex || 0}`, 10) || 0, 0), options.length - 1);
+      if (!options[correctIndex]) return setMessage(`Select the correct answer for question ${idx + 1}.`), null;
+      result.push({ question, options, correctIndex });
+    }
+    return result;
+  };
+
   const resolveMentor = () => {
     const selected = `${selectedMentor || ''}`.trim();
     if (isMentorMode) {
-      const name = selected || `${profile?.name || profile?.email || ''}`.trim();
+      const name = `${profile?.name || profile?.email || selected || ''}`.trim();
       if (!name) return null;
-      const existing = mentors.find((m) => keyOf(m.name) === keyOf(name));
-      if (existing) return existing;
       const category = `${mentorCategory || resolveCategory() || 'General'}`.trim() || 'General';
-      return { id: '', name, category, subtitle: `${category} Mentor`, imagePath: '' };
+      return {
+        id: user?.uid || '',
+        name,
+        category,
+        subtitle: `${category} Instructor`,
+        imagePath: profile?.photoUrl || profile?.photoURL || profile?.imagePath || '',
+      };
     }
     if (!mentors.length) return null;
     if (!selected) return mentors[0];
@@ -379,7 +514,7 @@ export default function AdminCourses({ isMentorMode = false }) {
 
   const ensureMentorRecord = async (mentor) => {
     if (!mentor) return null;
-    if (!isMentorMode || mentor.id) return mentor;
+    if (isMentorMode || mentor.id) return mentor;
     try {
       return await createMentor({ name: mentor.name, category: mentor.category || resolveCategory(), subtitle: mentor.subtitle || `${mentor.category || 'General'} Mentor`, courses: '0', students: '0', ratings: '0' });
     } catch {
@@ -423,12 +558,18 @@ export default function AdminCourses({ isMentorMode = false }) {
     const category = resolveCategory();
     const priceLabel = fmtPrice(price);
     const oldPriceLabel = fmtPrice(oldPrice);
-    const resolvedRating = `${rating || ''}`.trim();
-    const studentsLabel = fmtStudents(students);
-    const hoursValue = Number.parseInt(`${hours || ''}`.trim(), 10) || 0;
+    const resolvedRating = isMentorMode ? `${courses.find((c) => c.id === editingCourseId)?.rating || '0.0'}` : `${rating || ''}`.trim();
+    const currentCourse = courses.find((c) => c.id === editingCourseId) || {};
+    const calculatedStudents = paidEnrollmentCount(currentCourse, transactions);
+    const studentsLabel = isMentorMode ? fmtStudents(calculatedStudents) : fmtStudents(students);
+    const durationMinutes = computedDurationMinutes;
+    const hoursValue = isMentorMode
+      ? Math.max(0, Math.ceil(durationMinutes / 60))
+      : Number.parseInt(`${hours || ''}`.trim(), 10) || Math.max(0, Math.ceil(durationMinutes / 60));
     const mentor = resolveMentor();
 
-    if (!resolvedTitle || !category || !priceLabel || !resolvedRating || hoursValue <= 0) return setMessage('Fill all required fields.');
+    if (!resolvedTitle || !category || !priceLabel) return setMessage('Fill all required fields.');
+    if (!isMentorMode && !resolvedRating) return setMessage('Fill all required fields.');
     if (!mentor) return setMessage('Select a mentor.');
 
     const resolvedMentor = await ensureMentorRecord(mentor);
@@ -436,6 +577,8 @@ export default function AdminCourses({ isMentorMode = false }) {
 
     const sectionResult = buildSectionsForSave();
     if (!sectionResult) return;
+    const quizResult = buildQuizForSave();
+    if (!quizResult) return;
 
     const duplicate = courses.find((c) => (editingCourseId ? c.id !== editingCourseId : true) && keyOf(c.title) === keyOf(resolvedTitle));
     if (duplicate) return setMessage('Course title already exists.');
@@ -454,8 +597,10 @@ export default function AdminCourses({ isMentorMode = false }) {
       students: studentsLabel,
       classes: sectionResult.sections.length,
       hours: hoursValue,
+      durationMinutes,
       bookmarked: false,
       sections: sectionResult.sections,
+      quizzes: quizResult,
     };
 
     setSavingCourse(true);
@@ -516,6 +661,12 @@ export default function AdminCourses({ isMentorMode = false }) {
     setNewCategory('');
     const source = Array.isArray(course.sections) ? course.sections : [];
     setSections(source.length ? source.map((s, i) => mkSection(i, s)) : [mkSection(0)]);
+    const sourceQuiz = Array.isArray(course.quizzes)
+      ? course.quizzes
+      : Array.isArray(course.quiz?.questions)
+        ? course.quiz.questions
+        : [];
+    setQuizQuestions(sourceQuiz.map((item, idx) => mkQuizQuestion(idx, item)));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -598,9 +749,12 @@ export default function AdminCourses({ isMentorMode = false }) {
             </div>
 
             {isMentorMode ? (
-              <div className="admin-field">
-                <label>Mentor</label>
-                <input value={selectedMentor} disabled />
+              <div className="admin-readonly-note">
+                <span className="material-icons-outlined" aria-hidden>verified_user</span>
+                <div>
+                  <strong>Instructor</strong>
+                  <p>{`${profile?.name || profile?.email || 'Current instructor'}`.trim()} will be assigned automatically.</p>
+                </div>
               </div>
             ) : (
               <div className="admin-field">
@@ -655,10 +809,18 @@ export default function AdminCourses({ isMentorMode = false }) {
               <div className="admin-field"><label>Price (EGP)</label><input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="1450" /></div>
               <div className="admin-field"><label>Old Price</label><input value={oldPrice} onChange={(e) => setOldPrice(e.target.value)} placeholder="1890" /></div>
             </div>
-            <div className="admin-row">
-              <div className="admin-field"><label>Rating</label><input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="4.5" /></div>
-              <div className="admin-field"><label>Students</label><input value={students} onChange={(e) => setStudents(e.target.value)} placeholder="7800" /></div>
-            </div>
+            {!isMentorMode ? (
+              <div className="admin-row">
+                <div className="admin-field"><label>Rating</label><input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="4.5" /></div>
+                <div className="admin-field"><label>Students</label><input value={students} onChange={(e) => setStudents(e.target.value)} placeholder="7800" /></div>
+              </div>
+            ) : (
+              <div className="admin-metrics-grid">
+                <div className="admin-metric-card"><span>Rating</span><strong>Student reviews</strong></div>
+                <div className="admin-metric-card"><span>Enrolled students</span><strong>Calculated from payments</strong></div>
+                <div className="admin-metric-card"><span>Course duration</span><strong>{computedDurationLabel}</strong></div>
+              </div>
+            )}
             <div className="admin-field"><label>Sections</label><input value={sectionsCount} onChange={(e) => onSectionsCountChange(e.target.value)} placeholder="e.g. 3" inputMode="numeric" /></div>
 
             <div className="admin-sections">
@@ -685,6 +847,15 @@ export default function AdminCourses({ isMentorMode = false }) {
                                 </div>
                               </div>
                             </div>
+                            <div className="admin-field admin-duration-field">
+                              <label>Lesson duration (minutes)</label>
+                              <input
+                                value={lesson.durationMinutes}
+                                onChange={(e) => updateLessonField(section.id, lesson.id, 'durationMinutes', e.target.value.replace(/\D/g, ''))}
+                                placeholder="Auto from uploaded video, or enter minutes"
+                                inputMode="numeric"
+                              />
+                            </div>
                             <div className="admin-upload-actions">
                               <label className="secondary-button admin-file-label">
                                 {hasVideo ? 'Change Video' : 'Upload Video'}
@@ -704,7 +875,47 @@ export default function AdminCourses({ isMentorMode = false }) {
               <button type="button" className="link-button" onClick={addSection}>Add Section</button>
             </div>
 
-            <div className="admin-field"><label>Hours</label><input value={hours} onChange={(e) => setHours(e.target.value)} placeholder="42" /></div>
+            {!isMentorMode ? (
+              <div className="admin-field"><label>Hours</label><input value={hours} onChange={(e) => setHours(e.target.value)} placeholder={computedDurationMinutes ? `${Math.ceil(computedDurationMinutes / 60)}` : '42'} /></div>
+            ) : null}
+
+            <div className="admin-quiz-builder">
+              <div className="admin-section-card__head">
+                <div>
+                  <strong>Course Quiz</strong>
+                  <p>Optional MCQ test shown to students after enrollment.</p>
+                </div>
+                <button type="button" className="link-button" onClick={addQuizQuestion}>Add Question</button>
+              </div>
+              {!quizQuestions.length ? (
+                <div className="admin-empty-note">No quiz questions yet.</div>
+              ) : quizQuestions.map((question, qIdx) => (
+                <div key={question.id} className="admin-quiz-question">
+                  <div className="admin-section-card__head">
+                    <strong>Question {qIdx + 1}</strong>
+                    <button type="button" className="danger-text-button" onClick={() => removeQuizQuestion(question.id)}>Remove</button>
+                  </div>
+                  <div className="admin-field">
+                    <label>Question</label>
+                    <input value={question.question} onChange={(e) => updateQuizQuestion(question.id, e.target.value)} placeholder="Write the question" />
+                  </div>
+                  <div className="admin-quiz-options">
+                    {question.options.map((option, optionIdx) => (
+                      <label key={option.id} className="admin-quiz-option">
+                        <input
+                          type="radio"
+                          name={`correct_${question.id}`}
+                          checked={question.correctIndex === optionIdx}
+                          onChange={() => setQuizAnswer(question.id, optionIdx)}
+                        />
+                        <span>Correct</span>
+                        <input value={option.text} onChange={(e) => updateQuizOption(question.id, optionIdx, e.target.value)} placeholder={`Option ${optionIdx + 1}`} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
             <div className="admin-actions">
               {editingCourseId ? <button type="button" className="secondary-button" onClick={resetCourseForm} disabled={savingCourse}>Cancel</button> : null}
               <button type="button" className="primary-pill" onClick={saveCourse} disabled={savingCourse}><span>{savingCourse ? 'Saving...' : editingCourseId ? 'Update' : 'Add Course'}</span><span className="primary-pill__arrow">&gt;</span></button>
@@ -714,20 +925,24 @@ export default function AdminCourses({ isMentorMode = false }) {
 
         <div className="admin-section">
           <div className="admin-section-header">
-            <h3>All Courses ({visibleCourses.length})</h3>
-            <button type="button" className="link-button" onClick={() => navigate('/popular-courses')}>Preview</button>
+            <h3>{isMentorMode ? 'My Courses' : 'All Courses'} ({visibleCourses.length})</h3>
+            <button type="button" className="link-button" onClick={() => (isMentorMode ? setMessage('Showing your courses below.') : navigate('/popular-courses'))}>Preview</button>
           </div>
           <div className="admin-list">
-            {visibleCourses.map((course) => (
-              <div key={course.id || course.title} className="admin-card">
-                <div className="admin-card__media">{course.coverImagePath ? <img src={course.coverImagePath} alt={course.title} /> : null}</div>
-                <div className="admin-card__body"><strong>{course.title}</strong><span>{course.category}</span><span>{course.price} | {course.rating} | {course.students}</span></div>
-                <div className="admin-card__actions">
-                  <button type="button" onClick={() => startEditCourse(course)}>Edit</button>
-                  <button type="button" className="danger" disabled={busyDeleteId === course.id} onClick={() => removeCourse(course)}>{busyDeleteId === course.id ? 'Deleting...' : 'Delete'}</button>
+            {visibleCourses.map((course) => {
+              const studentLabel = isMentorMode ? fmtStudents(paidEnrollmentCount(course, transactions)) : course.students;
+              return (
+                <div key={course.id || course.title} className="admin-card">
+                  <div className="admin-card__media">{course.coverImagePath ? <img src={course.coverImagePath} alt={course.title} /> : null}</div>
+                  <div className="admin-card__body"><strong>{course.title}</strong><span>{course.category}</span><span>{course.price} | {course.rating || '0.0'} | {studentLabel}</span></div>
+                  <div className="admin-card__actions">
+                    <button type="button" onClick={() => navigate('/course-detail', { state: { course: { ...course, students: studentLabel } } })}>Preview</button>
+                    <button type="button" onClick={() => startEditCourse(course)}>Edit</button>
+                    <button type="button" className="danger" disabled={busyDeleteId === course.id} onClick={() => removeCourse(course)}>{busyDeleteId === course.id ? 'Deleting...' : 'Delete'}</button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         {!isMentorMode ? (

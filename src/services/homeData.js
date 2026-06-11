@@ -95,9 +95,43 @@ function sanitizeSections(sections = []) {
       lessons.push({
         title: lessonTitle,
         videoUrl: `${lesson?.videoUrl || ''}`.trim(),
+        durationMinutes: toInt(lesson?.durationMinutes ?? lesson?.duration ?? lesson?.minutes),
       });
     }
     result.push({ title, lessons });
+  }
+  return result;
+}
+
+function normalizeQuizQuestions(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && Array.isArray(raw.questions)) return raw.questions;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.questions)) return parsed.questions;
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function sanitizeQuizQuestions(questions = []) {
+  const source = normalizeQuizQuestions(questions);
+  const result = [];
+  for (const item of source) {
+    const question = `${item?.question || item?.title || ''}`.trim();
+    if (!question) continue;
+    const options = (Array.isArray(item?.options) ? item.options : [])
+      .map((option) => (typeof option === 'string' ? option : option?.text))
+      .map((option) => `${option || ''}`.trim())
+      .filter(Boolean);
+    if (options.length < 2) continue;
+    const rawIndex = toInt(item?.correctIndex ?? item?.answerIndex ?? 0);
+    const correctIndex = Math.min(Math.max(rawIndex, 0), options.length - 1);
+    result.push({ question, options, correctIndex });
   }
   return result;
 }
@@ -150,6 +184,94 @@ function replaceLessonVideoUrl(sections = [], sectionIndex = 0, lessonIndex = 0,
   }));
   nextSections[sectionIndex].lessons[lessonIndex].videoUrl = `${url || ''}`.trim();
   return nextSections;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(`${reader.result || ''}`);
+    reader.onerror = () => reject(reader.error || new Error('Could not read file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadBase64File(file) {
+  if (!file) return '';
+  const data = await fileToDataUrl(file);
+  const response = await levelupApi.uploadBase64({
+    data,
+    filename: file.name || 'upload.bin',
+    contentType: file.type || 'application/octet-stream',
+  });
+  return `${response?.url || ''}`.trim();
+}
+
+async function uploadFileToCloudinary(file, resourceType = 'auto') {
+  if (!file) return '';
+  const signature = await levelupApi.createCloudinaryUploadSignature({
+    filename: file.name || 'course-upload',
+    contentType: file.type || 'application/octet-stream',
+    resourceType,
+  });
+  if (!signature?.cloudName || !signature?.apiKey || !signature?.signature) {
+    throw new Error('Cloudinary upload signature is incomplete.');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('api_key', signature.apiKey);
+  formData.append('timestamp', signature.timestamp);
+  formData.append('signature', signature.signature);
+  formData.append('folder', signature.folder);
+  formData.append('public_id', signature.publicId);
+
+  const uploadType = signature.resourceType || resourceType || 'auto';
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${signature.cloudName}/${uploadType}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error?.message || `Cloudinary upload failed: ${response.status}`);
+  }
+  return `${data.secure_url || data.url || ''}`.trim();
+}
+
+async function uploadCourseFile(file, resourceType = 'auto') {
+  try {
+    return await uploadFileToCloudinary(file, resourceType);
+  } catch (error) {
+    if (error?.code === 'CLOUDINARY_NOT_CONFIGURED' || error?.status === 503) {
+      return uploadBase64File(file);
+    }
+    throw error;
+  }
+}
+
+async function resolveCourseUploads(course, { coverImageFile, lessonVideoUploads = [] } = {}) {
+  let nextCourse = { ...course, sections: sanitizeSections(course.sections) };
+
+  if (coverImageFile) {
+    const coverUrl = await uploadCourseFile(coverImageFile, 'image');
+    if (coverUrl) nextCourse.coverImagePath = coverUrl;
+  }
+
+  for (const upload of lessonVideoUploads) {
+    if (!upload?.file) continue;
+    const videoUrl = await uploadCourseFile(upload.file, 'video');
+    if (!videoUrl) continue;
+    nextCourse = {
+      ...nextCourse,
+      sections: replaceLessonVideoUrl(
+        nextCourse.sections,
+        upload.sectionIndex || 0,
+        upload.lessonIndex || 0,
+        videoUrl
+      ),
+    };
+  }
+
+  return nextCourse;
 }
 
 async function uploadRecordFileWithProgress(pb, { collection, recordId, field, file, filename, onProgress }) {
@@ -324,6 +446,7 @@ function mapCourse(pb, record) {
   const cover = `${data.coverImageUrl || data.coverImagePath || ''}`.trim();
   const mentorImage = `${data.mentorImageUrl || data.mentorImagePath || ''}`.trim();
   const sections = sanitizeSections(normalizeSections(data.sections));
+  const quizzes = sanitizeQuizQuestions(data.quizzes || data.quiz);
 
   return {
     id: record.id,
@@ -342,8 +465,10 @@ function mapCourse(pb, record) {
     students: `${data.students || ''}`.trim(),
     classes: toInt(data.classes),
     hours: toInt(data.hours),
+    durationMinutes: toInt(data.durationMinutes),
     bookmarked: Boolean(data.bookmarked),
     sections,
+    quizzes,
     featuredRank: toNullableInt(
       data.featuredRank ?? data.featured_rank ?? data.homeRank ?? data.home_rank ?? data.popularRank ?? data.popular_rank
     ),
@@ -490,8 +615,10 @@ function sanitizeCoursePayload(course = {}) {
     students: `${course.students || ''}`.trim(),
     classes: toInt(course.classes),
     hours: toInt(course.hours),
+    durationMinutes: toInt(course.durationMinutes),
     bookmarked: Boolean(course.bookmarked),
     sections: sanitizeSections(course.sections),
+    quizzes: sanitizeQuizQuestions(course.quizzes || course.quiz),
     featuredRank: toNullableInt(course.featuredRank),
   };
 }
@@ -592,7 +719,8 @@ export async function createCourse(
   { coverImageFile, lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
   return withGlobalLoading(async () => {
-    const payload = sanitizeCoursePayload(course);
+    const resolvedCourse = await resolveCourseUploads(course, { coverImageFile, lessonVideoUploads });
+    const payload = sanitizeCoursePayload(resolvedCourse);
     const response = await levelupApi.courses.create(payload);
     const mapped = mapCourse(null, response.item);
     invalidateCoursesQuery();
@@ -606,7 +734,8 @@ export async function updateCourse(
   { coverImageFile, previousCoverUrl = '', lessonVideoUploads = [], onLessonUploadProgress } = {}
 ) {
   return withGlobalLoading(async () => {
-    const payload = sanitizeCoursePayload(course);
+    const resolvedCourse = await resolveCourseUploads(course, { coverImageFile, lessonVideoUploads });
+    const payload = sanitizeCoursePayload(resolvedCourse);
     const response = await levelupApi.courses.update(courseId, payload);
     const mapped = mapCourse(null, response.item);
     invalidateCoursesQuery();

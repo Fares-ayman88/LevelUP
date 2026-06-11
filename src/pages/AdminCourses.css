@@ -1,0 +1,120 @@
+.admin-readonly-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dbe6fb;
+  border-radius: 18px;
+  background: #f7fbff;
+  color: #202244;
+}
+
+.admin-readonly-note > span {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #eaf2ff;
+  color: #0d65ff;
+  flex: 0 0 auto;
+}
+
+.admin-readonly-note strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.admin-readonly-note p,
+.admin-section-card__head p {
+  margin: 4px 0 0;
+  color: #707894;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.admin-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-metric-card {
+  min-height: 86px;
+  border: 1px solid #dbe6fb;
+  border-radius: 18px;
+  background: #fff;
+  padding: 16px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+}
+
+.admin-metric-card span {
+  color: #707894;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-metric-card strong {
+  color: #172044;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.admin-duration-field {
+  margin-top: 10px;
+}
+
+.admin-quiz-builder {
+  border: 1px solid #dbe6fb;
+  border-radius: 22px;
+  background: #f8fbff;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.admin-quiz-question {
+  border: 1px solid #dbe6fb;
+  border-radius: 18px;
+  background: #fff;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-quiz-options {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-quiz-option {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e3eaf8;
+  border-radius: 14px;
+  background: #f9fbff;
+}
+
+.admin-quiz-option span {
+  color: #1c2040;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-quiz-option input[type="text"],
+.admin-quiz-option input:not([type]) {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .admin-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}

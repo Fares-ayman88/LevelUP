@@ -107,6 +107,9 @@ export const levelupApi = {
   uploadBase64(payload) {
     return request('/uploads/base64', { method: 'POST', body: payload });
   },
+  createCloudinaryUploadSignature(payload) {
+    return request('/uploads/cloudinary-signature', { method: 'POST', body: payload });
+  },
   courses: {
     list() {
       return request('/courses', { auth: false });

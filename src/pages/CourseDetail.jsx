@@ -75,6 +75,39 @@ const Icon = ({ name, className, variant = 'round' }) => (
   </span>
 );
 
+const toMinutes = (value) => {
+  const parsed = Number.parseInt(`${value ?? ''}`.replace(/\D/g, ''), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatLessonDuration = (minutes = 0) => {
+  const total = Math.max(0, toMinutes(minutes));
+  if (!total) return '';
+  if (total < 60) return `${total} Mins`;
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours} ${hours === 1 ? 'Hour' : 'Hours'}`;
+};
+
+function normalizeQuizzes(raw = []) {
+  const source = Array.isArray(raw) ? raw : Array.isArray(raw?.questions) ? raw.questions : [];
+  return source
+    .map((item) => {
+      const question = `${item?.question || item?.title || ''}`.trim();
+      const options = (Array.isArray(item?.options) ? item.options : [])
+        .map((option) => (typeof option === 'string' ? option : option?.text))
+        .map((option) => `${option || ''}`.trim())
+        .filter(Boolean);
+      const correctIndex = Number.parseInt(`${item?.correctIndex ?? item?.answerIndex ?? 0}`, 10);
+      return {
+        question,
+        options,
+        correctIndex: Number.isFinite(correctIndex) ? correctIndex : 0,
+      };
+    })
+    .filter((item) => item.question && item.options.length >= 2);
+}
+
 function buildCurriculumFromSections(rawSections = []) {
   if (!Array.isArray(rawSections) || rawSections.length === 0) {
     return FALLBACK_CURRICULUM;
@@ -98,12 +131,14 @@ function buildCurriculumFromSections(rawSections = []) {
       const sourceLesson = sourceLessons[lessonIndex] || {};
       const lessonTitle = `${sourceLesson.title || ''}`.trim() || `Lesson ${lessonCounter}`;
       const rawVideoUrl = `${sourceLesson.videoUrl || sourceLesson.youtubeUrl || ''}`.trim();
+      const durationMinutes = toMinutes(sourceLesson.durationMinutes ?? sourceLesson.duration ?? sourceLesson.minutes);
 
       lessons.push({
         id: lessonCounter,
         index: `${lessonCounter}`.padStart(2, '0'),
         title: lessonTitle,
-        duration: '',
+        duration: formatLessonDuration(durationMinutes),
+        durationMinutes,
         locked: sectionIndex > 0,
         videoUrl: rawVideoUrl,
       });
@@ -112,7 +147,7 @@ function buildCurriculumFromSections(rawSections = []) {
 
     curriculum.push({
       title: sectionTitle,
-      duration: '',
+      duration: formatLessonDuration(lessons.reduce((sum, lesson) => sum + lesson.durationMinutes, 0)),
       lessons,
     });
   }
@@ -128,6 +163,8 @@ export default function CourseDetail() {
   const [reviewText, setReviewText] = useState('');
   const [reviewImage, setReviewImage] = useState(null);
   const [reviewPreview, setReviewPreview] = useState('');
+  const [quizAnswers, setQuizAnswers] = useState({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
   const reviewInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -173,9 +210,21 @@ export default function CourseDetail() {
   const curriculum = useMemo(() => {
     return buildCurriculumFromSections(course.sections);
   }, [course.sections]);
+  const quizQuestions = useMemo(() => normalizeQuizzes(course.quizzes || course.quiz), [course.quizzes, course.quiz]);
   const totalLessons = curriculum.reduce((sum, section) => sum + section.lessons.length, 0);
+  const totalDurationMinutes = curriculum.reduce((sum, section) => (
+    sum + section.lessons.reduce((lessonSum, lesson) => lessonSum + (lesson.durationMinutes || 0), 0)
+  ), 0);
+  const quizScore = quizQuestions.reduce((score, question, index) => (
+    quizAnswers[index] === question.correctIndex ? score + 1 : score
+  ), 0);
   const mentorName = (course.mentorName || '').trim() || 'Mentor';
   const mentorSubtitle = (course.mentorSubtitle || '').trim() || `${course.category} Mentor`;
+
+  useEffect(() => {
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+  }, [courseId]);
 
   const handleLessonClick = (lesson, sectionTitle) => {
     if (lesson.locked && !isEnrolled) {
@@ -222,6 +271,18 @@ export default function CourseDetail() {
     setReviewText('');
     handleRemoveImage();
     setMessage('Review submitted');
+  };
+
+  const handleSubmitQuiz = () => {
+    if (!isEnrolled) {
+      setMessage('Enroll to unlock the quiz.');
+      return;
+    }
+    if (quizQuestions.some((_, index) => quizAnswers[index] === undefined)) {
+      setMessage('Answer all quiz questions first.');
+      return;
+    }
+    setQuizSubmitted(true);
   };
 
   const mentorPayload = {
@@ -281,7 +342,7 @@ export default function CourseDetail() {
             <span className="course-info-meta__divider">|</span>
             <div className="course-info-meta__item">
               <Icon name="access_time" variant="outlined" className="course-info-meta__icon" />
-              <span>{course.hours} Hours</span>
+              <span>{formatLessonDuration(course.durationMinutes || totalDurationMinutes || (course.hours || 0) * 60) || `${course.hours} Hours`}</span>
             </div>
             <span className="course-price">{course.price}</span>
           </div>
@@ -426,7 +487,7 @@ export default function CourseDetail() {
             </div>
             <div className="bullet-item">
               <Icon name="quiz" variant="outlined" className="bullet-icon" />
-              <span>100 Quizzes</span>
+              <span>{quizQuestions.length} {quizQuestions.length === 1 ? 'Quiz Question' : 'Quiz Questions'}</span>
             </div>
             <div className="bullet-item">
               <Icon name="verified" variant="outlined" className="bullet-icon" />
@@ -434,6 +495,83 @@ export default function CourseDetail() {
             </div>
           </div>
         </div>
+        {quizQuestions.length ? (
+          <div className="course-section-block course-quiz-block">
+            <div className="course-quiz-header">
+              <div>
+                <h3>Course Quiz</h3>
+                <p>Choose one answer for each question. Your score appears immediately after submission.</p>
+              </div>
+              {quizSubmitted ? (
+                <div className="course-quiz-score">
+                  {quizScore}/{quizQuestions.length}
+                </div>
+              ) : null}
+            </div>
+            <div className="course-quiz-list">
+              {quizQuestions.map((question, questionIndex) => {
+                const selected = quizAnswers[questionIndex];
+                const isAnswered = selected !== undefined;
+                return (
+                  <div key={`${question.question}-${questionIndex}`} className="course-quiz-question">
+                    <div className="course-quiz-question__title">
+                      <span>{questionIndex + 1}</span>
+                      <strong>{question.question}</strong>
+                    </div>
+                    <div className="course-quiz-options">
+                      {question.options.map((option, optionIndex) => {
+                        const isSelected = selected === optionIndex;
+                        const isCorrect = question.correctIndex === optionIndex;
+                        const stateClass = quizSubmitted
+                          ? isCorrect
+                            ? 'correct'
+                            : isSelected
+                              ? 'wrong'
+                              : ''
+                          : isSelected
+                            ? 'selected'
+                            : '';
+                        return (
+                          <button
+                            key={`${option}-${optionIndex}`}
+                            type="button"
+                            className={`course-quiz-option ${stateClass}`}
+                            onClick={() => {
+                              if (quizSubmitted || !isEnrolled) return;
+                              setQuizAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }));
+                            }}
+                            disabled={quizSubmitted || !isEnrolled}
+                          >
+                            <span className="course-quiz-option__mark">
+                              {quizSubmitted && isCorrect ? '✓' : String.fromCharCode(65 + optionIndex)}
+                            </span>
+                            <span>{option}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {quizSubmitted && isAnswered ? (
+                      <div className={`course-quiz-feedback ${selected === question.correctIndex ? 'correct' : 'wrong'}`}>
+                        {selected === question.correctIndex ? 'Correct answer' : `Correct answer: ${question.options[question.correctIndex]}`}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="course-quiz-actions">
+              {quizSubmitted ? (
+                <button type="button" onClick={() => { setQuizAnswers({}); setQuizSubmitted(false); }}>
+                  Retake Quiz
+                </button>
+              ) : (
+                <button type="button" onClick={handleSubmitQuiz} disabled={!isEnrolled}>
+                  {isEnrolled ? 'Submit Quiz' : 'Enroll to Unlock Quiz'}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
         <div className="course-section-block">
           <div className="course-reviews-header">
             <h3>Reviews</h3>

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import nodemailer from 'nodemailer';
@@ -325,6 +326,17 @@ async function handleDebug(req, res, parts, query) {
     });
   }
 
+  if (parts[1] === 'cloudinary') {
+    return send(res, 200, {
+      configured: hasCloudinaryConfig(),
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME ? `${process.env.CLOUDINARY_CLOUD_NAME.slice(0, 3)}***` : '',
+      hasApiKey: Boolean(process.env.CLOUDINARY_API_KEY),
+      hasApiSecret: Boolean(process.env.CLOUDINARY_API_SECRET),
+      folder: getCloudinaryFolder(),
+      deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
+    });
+  }
+
   if (parts[1] === 'smtp-test') {
     const expected = process.env.LEVELUP_EMAIL_TEST_SECRET || '';
     const provided = String(query.secret || req.headers['x-levelup-test-secret'] || '');
@@ -410,6 +422,62 @@ async function handleDebug(req, res, parts, query) {
 
 function hasVercelDatabase() {
   return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+}
+
+function hasCloudinaryConfig() {
+  return Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
+}
+
+function getCloudinaryFolder() {
+  return (
+    process.env.CLOUDINARY_COURSE_FOLDER ||
+    process.env.CLOUDINARY_VIDEO_FOLDER ||
+    'levelup/courses'
+  ).replace(/^\/+|\/+$/g, '');
+}
+
+function configureCloudinary() {
+  if (!hasCloudinaryConfig()) {
+    throw new Error('Cloudinary environment variables are not configured.');
+  }
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  });
+}
+
+function cloudinaryUploadSignature({ resourceType = 'auto', filename = '' } = {}) {
+  configureCloudinary();
+  const safeResourceType = ['image', 'video', 'raw', 'auto'].includes(resourceType) ? resourceType : 'auto';
+  const timestamp = Math.round(Date.now() / 1000);
+  const folder = getCloudinaryFolder();
+  const baseName = `${filename || 'course-upload'}`
+    .replace(/\.[^.]+$/, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^\w/-]/g, '')
+    .slice(0, 80) || 'course-upload';
+  const publicId = `${Date.now()}-${baseName}`;
+  const params = {
+    folder,
+    public_id: publicId,
+    timestamp,
+  };
+  const signature = cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET);
+  return {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    timestamp,
+    folder,
+    publicId,
+    signature,
+    resourceType: safeResourceType,
+  };
 }
 
 async function sendNoDatabaseFallback(req, res, parts) {
@@ -1307,7 +1375,40 @@ async function handleUploads(req, res, parts) {
   }
   const user = await requireUser(req, res);
   if (!user) return;
+  if (req.method === 'POST' && parts[1] === 'cloudinary-signature') {
+    if (!hasCloudinaryConfig()) {
+      return bad(res, 'Cloudinary is not configured.', 503, 'CLOUDINARY_NOT_CONFIGURED');
+    }
+    const resourceType = String(req.body?.resourceType || 'auto').trim();
+    const filename = String(req.body?.filename || '').trim();
+    return send(res, 200, cloudinaryUploadSignature({ resourceType, filename }));
+  }
   if (req.method === 'POST' && parts[1] === 'base64') {
+    if (hasCloudinaryConfig()) {
+      try {
+        const raw = String(req.body?.data || '');
+        const contentType = String(req.body?.contentType || '');
+        const resourceType = contentType.startsWith('video/') ? 'video' : contentType.startsWith('image/') ? 'image' : 'auto';
+        const filename = String(req.body?.filename || 'course-upload').trim();
+        const signaturePayload = cloudinaryUploadSignature({ resourceType, filename });
+        const result = await cloudinary.uploader.upload(raw, {
+          resource_type: signaturePayload.resourceType,
+          folder: signaturePayload.folder,
+          public_id: signaturePayload.publicId,
+        });
+        return send(res, 201, {
+          url: result.secure_url,
+          filename,
+          provider: 'cloudinary',
+          publicId: result.public_id,
+          resourceType: result.resource_type,
+          bytes: result.bytes || 0,
+          duration: result.duration || null,
+        });
+      } catch (error) {
+        return bad(res, error?.message || 'Cloudinary upload failed.', 500, 'CLOUDINARY_UPLOAD_FAILED');
+      }
+    }
     const id = makeId('file_');
     const raw = String(req.body?.data || '');
     const dataBase64 = raw.includes(',') ? raw.split(',').pop() : raw;
