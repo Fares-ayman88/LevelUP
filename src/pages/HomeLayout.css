@@ -6,11 +6,13 @@
   grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
+  overflow-x: clip;
 }
 
 .home-sidebar {
   position: sticky;
   top: 24px;
+  min-width: 0;
 }
 
 .home-sidebar-card {
@@ -307,11 +309,21 @@
 .home-main {
   width: auto;
   max-width: none;
+  min-width: 0;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;
+}
+
+.home-main__promo,
+.home-section,
+.promo-carousel,
+.course-filter-row,
+.course-row {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .home-main__intro {
@@ -390,6 +402,7 @@
   border: 1px solid rgba(190, 205, 237, 0.76);
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 16px 32px rgba(150, 168, 205, 0.12);
+  overflow: hidden;
 }
 
 .course-row {
