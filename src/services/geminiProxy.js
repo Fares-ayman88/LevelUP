@@ -15,8 +15,8 @@ async function readResponse(response) {
 function getErrorMessage(data) {
   if (!data || typeof data !== 'object') return '';
   return [
-    data.error,
     data.message,
+    data.error,
     data.status ? `status: ${data.status}` : '',
   ]
     .filter(Boolean)
@@ -47,8 +47,8 @@ export async function sendGeminiChat({ message, history = [], attachments = [] }
     const details = getErrorMessage(data);
     throw new Error(
       details
-        ? `Assistant request failed (${response.status}): ${details}`
-        : `Assistant request failed (${response.status}).`
+        ? details
+        : 'The AI assistant is temporarily unavailable.'
     );
   }
 

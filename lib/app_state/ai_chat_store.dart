@@ -79,8 +79,7 @@ class AiChatSummary {
 class AiChatStore {
   AiChatStore._();
 
-  static const String _geminiApiKey =
-      'AIzaSyBjTHuvD--BLmEP_2b1DXOyKlXR7ZM9cnM';
+  static const String _geminiApiKey = '';
   static const Duration sessionExpiry = Duration(minutes: 30);
   static const String _prefsSessionsKey = 'ai_chat_sessions_v1';
   static const String _prefsActiveKey = 'ai_chat_active_v1';

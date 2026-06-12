@@ -36,7 +36,7 @@ export default function Indox() {
         ...prev,
         {
           role: 'assistant',
-          text: details ? `Could not reach assistant. ${details}` : 'Could not reach assistant.',
+          text: details || 'The AI assistant is temporarily unavailable.',
         },
       ]);
     } finally {

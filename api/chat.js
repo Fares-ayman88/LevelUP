@@ -129,6 +129,89 @@ function extractGeminiText(data) {
     .trim();
 }
 
+function buildProviderError(provider, response, body) {
+  const isGemini = provider === 'Gemini';
+  const fallbackMessage =
+    response.status === 403 && isGemini
+      ? 'The AI assistant is not configured correctly. Please replace the Gemini API key in the deployment environment.'
+      : `${provider} request failed.`;
+
+  const error = new Error(fallbackMessage);
+  error.status = response.status;
+  error.provider = provider;
+  error.body = body;
+  return error;
+}
+
+async function fetchGeminiReply({ message, history, attachments, apiKey }) {
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const endpoint =
+    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      contents: buildGeminiContents({ message, history, attachments }),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw buildProviderError('Gemini', response, body);
+  }
+
+  const data = await response.json();
+  const reply = extractGeminiText(data);
+  if (!reply) {
+    const error = new Error('Empty reply from Gemini.');
+    error.status = 502;
+    error.provider = 'Gemini';
+    throw error;
+  }
+
+  return reply;
+}
+
+async function fetchOpenAiReply({ message, history, attachments, apiKey }) {
+  const endpoint = process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1/responses';
+  const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+  const input = buildInput({ message, history, attachments });
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      input,
+      max_output_tokens: 512,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw buildProviderError('OpenAI', response, body);
+  }
+
+  const data = await response.json();
+  const reply = extractOutputText(data);
+  if (!reply) {
+    const error = new Error('Empty reply from OpenAI.');
+    error.status = 502;
+    error.provider = 'OpenAI';
+    throw error;
+  }
+
+  return reply;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -144,91 +227,52 @@ export default async function handler(req, res) {
   }
 
   const geminiApiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const openAiApiKey = (process.env.OPENAI_API_KEY || '').trim();
+  const errors = [];
+
   if (geminiApiKey) {
-    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    const endpoint =
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
-
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': geminiApiKey,
-        },
-        body: JSON.stringify({
-          contents: buildGeminiContents({ message, history, attachments }),
-        }),
+      const reply = await fetchGeminiReply({
+        message,
+        history,
+        attachments,
+        apiKey: geminiApiKey,
       });
-
-      if (!response.ok) {
-        const body = await response.text();
-        return res.status(response.status).json({
-          error: 'Gemini API error',
-          status: response.status,
-          body,
-        });
-      }
-
-      const data = await response.json();
-      const reply = extractGeminiText(data);
-      if (!reply) {
-        return res.status(502).json({ error: 'Empty reply from Gemini' });
-      }
-
-      return res.status(200).json({ reply });
+      return res.status(200).json({ reply, provider: 'gemini' });
     } catch (error) {
-      return res.status(500).json({
-        error: 'Gemini proxy failed',
-        message: String(error?.message || error),
-      });
+      errors.push(error);
     }
   }
 
-  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Missing GEMINI_API_KEY or OPENAI_API_KEY' });
+  if (openAiApiKey) {
+    try {
+      const reply = await fetchOpenAiReply({
+        message,
+        history,
+        attachments,
+        apiKey: openAiApiKey,
+      });
+      return res.status(200).json({ reply, provider: 'openai' });
+    } catch (error) {
+      errors.push(error);
+    }
   }
 
-  const endpoint = process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1/responses';
-  const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
-  const input = buildInput({ message, history, attachments });
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        input,
-        max_output_tokens: 512,
-        temperature: 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      return res.status(response.status).json({
-        error: 'OpenAI API error',
-        status: response.status,
-        body,
-      });
-    }
-
-    const data = await response.json();
-    const reply = extractOutputText(data);
-    if (!reply) {
-      return res.status(502).json({ error: 'Empty reply from OpenAI' });
-    }
-
-    return res.status(200).json({ reply });
-  } catch (error) {
-    return res.status(500).json({
-      error: 'Proxy failed',
-      message: String(error?.message || error),
+  if (!geminiApiKey && !openAiApiKey) {
+    return res.status(503).json({
+      error: 'AI assistant is not configured.',
+      message: 'Set GEMINI_API_KEY or OPENAI_API_KEY in the deployment environment.',
     });
   }
+
+  const primaryError = errors[0];
+  const status = primaryError?.status === 401 || primaryError?.status === 403 ? 503 : 502;
+  return res.status(status).json({
+    error: 'AI assistant is temporarily unavailable.',
+    message:
+      primaryError?.status === 403 && primaryError?.provider === 'Gemini'
+        ? 'The Gemini API key is rejected. Generate a new key and update GEMINI_API_KEY on Vercel.'
+        : 'Please check the AI provider environment variables and try again.',
+    providersTried: errors.map((error) => error?.provider).filter(Boolean),
+  });
 }
