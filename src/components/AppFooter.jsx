@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import './AppFooter.css';
 
 const HIDDEN_ROUTE_PATHS = ['/', '/presentation'];
@@ -104,48 +104,5 @@ const footerSections = [
 ];
 
 export default function AppFooter() {
-  const { pathname } = useLocation();
-  const shouldHide =
-    HIDDEN_ROUTE_PATHS.includes(pathname) ||
-    HIDDEN_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-
-  if (shouldHide) return null;
-
-  return (
-    <footer className="app-footer" aria-label="LevelUp footer">
-      <div className="app-footer__teach">
-        <Link className="app-footer__teach-button" to="/instructor-registration">
-          Teach on LevelUp
-        </Link>
-        <section className="app-footer__teach-copy" aria-label="Teach on LevelUp">
-          <h2>Share your courses with learners everywhere</h2>
-          <p>Create online lessons, reach students across LevelUp, and build a learning business.</p>
-        </section>
-      </div>
-
-      <div className="app-footer__directory" aria-label="Footer directory">
-        <h2>Explore top skills and certificates</h2>
-        <div className="app-footer__links-grid">
-          {footerSections.map((section) => (
-            <nav key={section.title} className="app-footer__section" aria-label={section.title}>
-              <h3>{section.title}</h3>
-              {section.links.map((item) => (
-                <Link key={`${section.title}-${item.label}`} to={item.to}>
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          ))}
-        </div>
-      </div>
-
-      <div className="app-footer__bottom" aria-label="Footer legal">
-        <Link className="app-footer__brand" to="/home" aria-label="LevelUp home">
-          <img src="/assets/ul_logo.png" alt="" aria-hidden />
-          <span>LevelUp</span>
-        </Link>
-        <span>Copyright 2026 LevelUp. All rights reserved.</span>
-      </div>
-    </footer>
-  );
+  return null;
 }
