@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import './AppFooter.css';
 
+const HIDDEN_ROUTE_PATHS = ['/', '/presentation'];
 const HIDDEN_ROUTE_PREFIXES = [
   '/sign-in',
   '/sign-up',
@@ -17,7 +18,6 @@ const HIDDEN_ROUTE_PREFIXES = [
   '/lesson-player',
   '/mentor-chat-thread',
   '/support-chat-thread',
-  '/presentation',
 ];
 
 const footerSections = [
@@ -105,7 +105,9 @@ const footerSections = [
 
 export default function AppFooter() {
   const { pathname } = useLocation();
-  const shouldHide = HIDDEN_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  const shouldHide =
+    HIDDEN_ROUTE_PATHS.includes(pathname) ||
+    HIDDEN_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
   if (shouldHide) return null;
 
