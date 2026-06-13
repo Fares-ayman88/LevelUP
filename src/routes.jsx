@@ -1,4 +1,3 @@
-import RootRedirect from './pages/RootRedirect.jsx';
 import SignIn from './pages/SignIn.jsx';
 import SignUp from './pages/SignUp.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
@@ -60,7 +59,7 @@ import UserFlow from './pages/UserFlow.jsx';
 import PresentationWebsite from './pages/PresentationWebsite.jsx';
 
 export const routeConfig = [
-  { path: '/', title: 'Root', component: RootRedirect },
+  { path: '/', title: 'LevelUP Showcase', component: PresentationWebsite },
   { path: '/sign-in', title: 'Sign In', component: SignIn },
   { path: '/sign-up', title: 'Sign Up', component: SignUp },
   { path: '/verify-otp', title: 'Verify OTP', component: VerifyEmail },
