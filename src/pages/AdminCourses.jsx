@@ -175,6 +175,8 @@ export default function AdminCourses({ isMentorMode = false }) {
   const [savingMentor, setSavingMentor] = useState(false);
   const [busyDeleteId, setBusyDeleteId] = useState('');
   const [busyTxId, setBusyTxId] = useState('');
+  const [activePanel, setActivePanel] = useState('create');
+  const [showCourseAdvanced, setShowCourseAdvanced] = useState(false);
 
   const [courses, setCourses] = useState([]);
   const [mentors, setMentors] = useState([]);
@@ -249,6 +251,10 @@ export default function AdminCourses({ isMentorMode = false }) {
   }, [courses, isMentorMode, profile, user?.uid]);
   const computedDurationMinutes = useMemo(() => sumDurationMinutes(sections), [sections]);
   const computedDurationLabel = useMemo(() => formatDuration(computedDurationMinutes), [computedDurationMinutes]);
+  const waitingTransactions = useMemo(
+    () => transactions.filter((item) => `${item.status || ''}`.trim().toLowerCase() === 'waiting'),
+    [transactions]
+  );
 
   const loadCatalog = async () => {
     const [c, m] = await Promise.all([fetchCourses(), fetchMentors()]);
@@ -347,6 +353,7 @@ export default function AdminCourses({ isMentorMode = false }) {
     setEditingCourseId('');
     setSections([mkSection(0)]);
     setQuizQuestions([]);
+    setShowCourseAdvanced(false);
     setShowCategoryInput(false);
     setNewCategory('');
   };
@@ -664,6 +671,7 @@ export default function AdminCourses({ isMentorMode = false }) {
   const startEditMentor = (mentor) => {
     setEditingMentorId(mentor.id || '');
     setShowMentorInput(true);
+    setActivePanel('create');
     setMentorName(mentor.name || '');
     setMentorCategory(mentor.category || resolveCategory());
     setMentorImagePath(mentor.imagePath || '');
@@ -708,6 +716,8 @@ export default function AdminCourses({ isMentorMode = false }) {
         ? course.quiz.questions
         : [];
     setQuizQuestions(sourceQuiz.map((item, idx) => mkQuizQuestion(idx, item)));
+    setShowCourseAdvanced(true);
+    setActivePanel('create');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -749,8 +759,60 @@ export default function AdminCourses({ isMentorMode = false }) {
           <h2>{isMentorMode ? 'Mentor Courses' : 'Admin Courses'}</h2>
         </div>
 
+        <div className="admin-dashboard-bar">
+          <button
+            type="button"
+            className={`admin-dashboard-tab${activePanel === 'create' ? ' active' : ''}`}
+            onClick={() => setActivePanel('create')}
+          >
+            <span className="material-icons-outlined" aria-hidden>add_circle</span>
+            <strong>{editingCourseId ? 'Edit' : 'Create'}</strong>
+          </button>
+          <button
+            type="button"
+            className={`admin-dashboard-tab${activePanel === 'courses' ? ' active' : ''}`}
+            onClick={() => setActivePanel('courses')}
+          >
+            <span className="material-icons-outlined" aria-hidden>school</span>
+            <strong>{visibleCourses.length}</strong>
+            <small>Courses</small>
+          </button>
+          {!isMentorMode ? (
+            <>
+              <button
+                type="button"
+                className={`admin-dashboard-tab${activePanel === 'payments' ? ' active' : ''}`}
+                onClick={() => setActivePanel('payments')}
+              >
+                <span className="material-icons-outlined" aria-hidden>payments</span>
+                <strong>{waitingTransactions.length}</strong>
+                <small>Pending</small>
+              </button>
+              <button
+                type="button"
+                className={`admin-dashboard-tab${activePanel === 'mentors' ? ' active' : ''}`}
+                onClick={() => setActivePanel('mentors')}
+              >
+                <span className="material-icons-outlined" aria-hidden>groups</span>
+                <strong>{mentors.length}</strong>
+                <small>Mentors</small>
+              </button>
+            </>
+          ) : null}
+        </div>
+
+        {activePanel === 'create' ? (
         <div className="admin-section">
-          <h3>{editingCourseId ? 'Edit Course' : 'Create Course'}</h3>
+          <div className="admin-section-header">
+            <h3>{editingCourseId ? 'Edit Course' : 'Create Course'}</h3>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => setShowCourseAdvanced((value) => !value)}
+            >
+              {showCourseAdvanced ? 'Hide Details' : 'Course Content'}
+            </button>
+          </div>
           <div className="admin-form">
             <div className="admin-field">
               <label>Course Title</label>
@@ -862,6 +924,8 @@ export default function AdminCourses({ isMentorMode = false }) {
                 <div className="admin-metric-card"><span>Course duration</span><strong>{computedDurationLabel}</strong></div>
               </div>
             )}
+            {showCourseAdvanced ? (
+              <>
             <div className="admin-field"><label>Sections</label><input value={sectionsCount} onChange={(e) => onSectionsCountChange(e.target.value)} placeholder="e.g. 3" inputMode="numeric" /></div>
 
             <div className="admin-sections">
@@ -957,13 +1021,25 @@ export default function AdminCourses({ isMentorMode = false }) {
                 </div>
               ))}
             </div>
+              </>
+            ) : (
+              <div className="admin-compact-note">
+                <span className="material-icons-outlined" aria-hidden>auto_stories</span>
+                <div>
+                  <strong>{sections.length} section{sections.length === 1 ? '' : 's'} ready</strong>
+                  <p>Open course content when you need lessons, videos, duration, or quiz controls.</p>
+                </div>
+              </div>
+            )}
             <div className="admin-actions">
               {editingCourseId ? <button type="button" className="secondary-button" onClick={resetCourseForm} disabled={savingCourse}>Cancel</button> : null}
               <button type="button" className="primary-pill" onClick={saveCourse} disabled={savingCourse}><span>{savingCourse ? 'Saving...' : editingCourseId ? 'Update' : 'Add Course'}</span><span className="primary-pill__arrow">&gt;</span></button>
             </div>
           </div>
         </div>
+        ) : null}
 
+        {activePanel === 'courses' ? (
         <div className="admin-section">
           <div className="admin-section-header">
             <h3>{isMentorMode ? 'My Courses' : 'All Courses'} ({visibleCourses.length})</h3>
@@ -986,9 +1062,27 @@ export default function AdminCourses({ isMentorMode = false }) {
             })}
           </div>
         </div>
-        {!isMentorMode ? (
+        ) : null}
+        {!isMentorMode && activePanel === 'mentors' ? (
           <div className="admin-section">
-            <h3>All Mentors ({mentors.length})</h3>
+            <div className="admin-section-header">
+              <h3>All Mentors ({mentors.length})</h3>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  setActivePanel('create');
+                  setShowMentorInput(true);
+                  setEditingMentorId('');
+                  setMentorName('');
+                  setMentorCategory(resolveCategory());
+                  setMentorImageFile(null);
+                  setMentorImagePath('');
+                }}
+              >
+                Add Mentor
+              </button>
+            </div>
             <div className="admin-list">
               {mentors.map((mentor) => (
                 <div key={mentor.id || mentor.name} className="admin-card">
@@ -1004,7 +1098,7 @@ export default function AdminCourses({ isMentorMode = false }) {
           </div>
         ) : null}
 
-        {!isMentorMode ? (
+        {!isMentorMode && activePanel === 'payments' ? (
           <div className="admin-section">
             <h3>Payment Requests ({transactions.length})</h3>
             <div className="admin-list">
