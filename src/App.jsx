@@ -7,8 +7,21 @@ import { routeConfig } from './routes.jsx';
 import Placeholder from './pages/Placeholder.jsx';
 import NotFound from './pages/NotFound.jsx';
 import RoleRoute from './components/RoleRoute.jsx';
+import PresentationWebsite from './pages/PresentationWebsite.jsx';
 
 export default function App() {
+  const isShowcaseHost =
+    typeof window !== 'undefined' &&
+    window.location.hostname.includes('levelup-showcase');
+
+  if (isShowcaseHost) {
+    return (
+      <ErrorBoundary>
+        <PresentationWebsite />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <EmailVerificationGate>
