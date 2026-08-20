@@ -30,18 +30,28 @@ type GoogleOAuthConfiguration = {
 };
 
 function configuration(): GoogleOAuthConfiguration | null {
-  const environment = getServerEnvironment();
-  if (!environment.GOOGLE_CLIENT_ID || !environment.GOOGLE_CLIENT_SECRET) return null;
+  try {
+    const environment = getServerEnvironment();
+    if (!environment.GOOGLE_CLIENT_ID || !environment.GOOGLE_CLIENT_SECRET) return null;
 
-  return {
-    clientId: environment.GOOGLE_CLIENT_ID,
-    clientSecret: environment.GOOGLE_CLIENT_SECRET,
-    redirectUri: new URL("/api/auth/google/callback", environment.APP_URL).toString(),
-  };
+    const baseAppUrl = environment.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
+    return {
+      clientId: environment.GOOGLE_CLIENT_ID,
+      clientSecret: environment.GOOGLE_CLIENT_SECRET,
+      redirectUri: new URL("/api/auth/google/callback", baseAppUrl).toString(),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function isGoogleSignInConfigured(): boolean {
-  return Boolean(configuration());
+  try {
+    return Boolean(configuration());
+  } catch {
+    return false;
+  }
 }
 
 export function createGoogleAuthorizationUrl(state: GoogleOAuthState): string {

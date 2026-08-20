@@ -23,7 +23,13 @@ function googleErrorMessage(error: string | string[] | undefined): string | unde
 }
 
 export default async function SignInPage({ searchParams }: SignInPageProps) {
-  const { error } = await searchParams;
+  let error: string | string[] | undefined;
+  try {
+    const resolved = searchParams ? await searchParams : undefined;
+    error = resolved?.error;
+  } catch {
+    error = undefined;
+  }
   const googleEnabled = isGoogleSignInConfigured();
 
   return (
