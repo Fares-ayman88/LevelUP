@@ -19,11 +19,17 @@ const globalForDatabase = globalThis as typeof globalThis & DatabaseGlobals;
 export function getDatabase(): Database {
   if (!globalForDatabase.database) {
     const environment = getServerEnvironment();
+    const isRemote =
+      environment.DATABASE_URL.includes("supabase.com")
+      || environment.DATABASE_URL.includes("neon.tech")
+      || environment.DATABASE_URL.includes("sslmode=");
+
     const pool = new Pool({
       connectionString: environment.DATABASE_URL,
-      connectionTimeoutMillis: 5_000,
+      connectionTimeoutMillis: 10_000,
       idleTimeoutMillis: 30_000,
       max: environment.DATABASE_POOL_MAX,
+      ...(isRemote ? { ssl: { rejectUnauthorized: false } } : {}),
     });
 
     globalForDatabase.pool = pool;

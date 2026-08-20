@@ -2,7 +2,7 @@
 
 import "./globals.css";
 
-export default function GlobalError({ reset }: Readonly<{ error: Error & { digest?: string }; reset: () => void }>) {
+export default function GlobalError({ error, reset }: Readonly<{ error: Error & { digest?: string }; reset: () => void }>) {
   return (
     <html lang="en">
       <body>
@@ -13,6 +13,11 @@ export default function GlobalError({ reset }: Readonly<{ error: Error & { diges
             <p className="mt-3 text-sm leading-6 text-slate-400">
               Please try again. If the issue continues, contact your center administrator.
             </p>
+            {error?.message && (
+              <pre className="mt-4 max-h-36 overflow-auto rounded border border-rose-500/30 bg-rose-950/40 p-3 text-left font-mono text-xs text-rose-300">
+                {error.message}
+              </pre>
+            )}
             <button
               className="mt-7 h-11 rounded-lg bg-[#96adff] px-5 text-sm font-semibold text-[#080a0f] transition hover:bg-[#adc0ff]"
               onClick={reset}
