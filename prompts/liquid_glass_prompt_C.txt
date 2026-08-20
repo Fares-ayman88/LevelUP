@@ -1,0 +1,2 @@
+single-column mobile dashboard with stacked frosted glass panels, top hero stat card with progress pill, mid card with QR/module and subtle animated glow, bottom floating rounded CTA button with glossy outline and soft drop shadow, soft ambient lighting, cool blue-gray palette, layered depth with blurred background scene, polished modern UI, high readability, subtle sheen highlights --ar 16:9 --style raw --stylize 250
+Negative: low contrast, harsh shadows, cluttered layout, dark color palette, pixelation, excessive detail, watermark, unreadable text
