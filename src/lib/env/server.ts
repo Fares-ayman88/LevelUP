@@ -15,9 +15,9 @@ function getResolvedAppUrl(source: NodeJS.ProcessEnv): string {
 const serverEnvironmentSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-    DATABASE_URL: z.string().url().default("postgresql://postgres.nuejqzjpouvvzfvoysev:Ff123456%4053142982@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"),
+    DATABASE_URL: z.string().url(),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
-    SESSION_SECRET: z.string().min(16).default("7f818dc60751545c192c9479bc44a56cacbb3262c148cd018b6d1a878db64c52e01a8ed4653522a497a93babc7e8a6ab"),
+    SESSION_SECRET: z.string().min(32),
     APP_URL: z.string().url().default("http://localhost:3000"),
     CRON_SECRET: z.string().min(16).optional(),
     GOOGLE_CLIENT_ID: z.string().trim().min(1).optional(),
@@ -36,6 +36,22 @@ const serverEnvironmentSchema = z
     OBJECT_STORAGE_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
   })
   .superRefine((environment, context) => {
+    if (environment.NODE_ENV === "production" && !environment.CRON_SECRET) {
+      context.addIssue({
+        code: "custom",
+        message: "CRON_SECRET is required in production.",
+        path: ["CRON_SECRET"],
+      });
+    }
+
+    if (environment.NODE_ENV === "production" && environment.EMAIL_OTP_PROVIDER === "development") {
+      context.addIssue({
+        code: "custom",
+        message: "EMAIL_OTP_PROVIDER must use a production provider outside development.",
+        path: ["EMAIL_OTP_PROVIDER"],
+      });
+    }
+
     if (environment.OTP_PROVIDER === "infobip") {
       if (!environment.INFOBIP_BASE_URL) {
         context.addIssue({
