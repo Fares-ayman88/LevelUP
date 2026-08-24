@@ -236,6 +236,36 @@ export const studentProfiles = pgTable(
   ],
 );
 
+export const studentAccessCodes = pgTable(
+  "student_access_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    studentProfileId: uuid("student_profile_id")
+      .notNull()
+      .references(() => studentProfiles.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: varchar("code_hash", { length: 128 }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdByMembershipId: uuid("created_by_membership_id").references(() => organizationMemberships.id, {
+      onDelete: "set null",
+    }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("student_access_codes_profile_unique").on(table.studentProfileId),
+    uniqueIndex("student_access_codes_hash_unique").on(table.codeHash),
+    index("student_access_codes_org_status_idx").on(table.organizationId, table.isActive),
+    index("student_access_codes_user_idx").on(table.userId),
+  ],
+);
+
 export const guardianStudentLinks = pgTable(
   "guardian_student_links",
   {

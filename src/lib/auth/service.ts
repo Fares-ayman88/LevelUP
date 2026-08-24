@@ -13,6 +13,8 @@ import {
   organizationMemberships,
   organizations,
   otpChallenges,
+  studentAccessCodes,
+  studentProfiles,
   users,
 } from "@/db/schema";
 import { getDatabase } from "@/db/client";
@@ -25,6 +27,8 @@ import {
   hashEmailSignUpOtpCode,
   hashOtpCode,
   hashSessionToken,
+  hashStudentAccessCode,
+  normalizeStudentAccessCode,
   safelyMatchesHash,
 } from "./crypto";
 import { normalizeEmailAddress } from "./email";
@@ -37,6 +41,7 @@ import {
   OtpDeliveryError,
   OtpRateLimitError,
   OtpVerificationError,
+  StudentAccessCodeError,
 } from "./errors";
 import { createInfobipOtpSender, developmentOtpSender } from "./otp";
 import { hashPassword, verifyPassword } from "./password";
@@ -95,7 +100,7 @@ export type VerifiedSignIn = {
   sessionToken: string;
 };
 
-type SignInMethod = "email_password" | "google" | "phone_otp";
+type SignInMethod = "email_password" | "google" | "phone_otp" | "student_access_code";
 
 type SessionCreationInput = {
   emailVerified?: boolean;
@@ -594,6 +599,48 @@ export async function signInWithEmailPassword(emailInput: string, password: stri
   if (!user || !isPasswordValid) throw new InvalidCredentialsError();
 
   return createAuthenticatedSession({ method: "email_password", userId: user.id });
+}
+
+export async function signInWithStudentAccessCode(codeInput: string): Promise<VerifiedSignIn> {
+  const code = normalizeStudentAccessCode(codeInput);
+  if (!code) throw new StudentAccessCodeError();
+
+  const db = getDatabase();
+  const [credential] = await db
+    .select({
+      id: studentAccessCodes.id,
+      userId: studentAccessCodes.userId,
+    })
+    .from(studentAccessCodes)
+    .innerJoin(
+      studentProfiles,
+      and(
+        eq(studentAccessCodes.studentProfileId, studentProfiles.id),
+        eq(studentAccessCodes.organizationId, studentProfiles.organizationId),
+        eq(studentProfiles.status, "active"),
+      ),
+    )
+    .innerJoin(
+      organizationMemberships,
+      and(
+        eq(studentAccessCodes.userId, organizationMemberships.userId),
+        eq(studentAccessCodes.organizationId, organizationMemberships.organizationId),
+        eq(organizationMemberships.role, "student"),
+        eq(organizationMemberships.status, "active"),
+      ),
+    )
+    .innerJoin(users, and(eq(studentAccessCodes.userId, users.id), eq(users.status, "active")))
+    .where(and(eq(studentAccessCodes.codeHash, hashStudentAccessCode(code)), eq(studentAccessCodes.isActive, true)))
+    .limit(1);
+
+  if (!credential) throw new StudentAccessCodeError();
+
+  await db
+    .update(studentAccessCodes)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(studentAccessCodes.id, credential.id));
+
+  return createAuthenticatedSession({ method: "student_access_code", userId: credential.userId });
 }
 
 export async function signUpWithEmailPassword(input: {

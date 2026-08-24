@@ -13,12 +13,14 @@ import {
   initialOnboardingState,
   initialOtpRequestState,
   initialOtpVerificationState,
+  initialStudentAccessCodeSignInState,
   type EmailSignInState,
   type EmailSignUpRequestState,
   type EmailSignUpVerificationState,
   type OnboardingState,
   type OtpRequestState,
   type OtpVerificationState,
+  type StudentAccessCodeSignInState,
 } from "@/lib/auth/form-state";
 import {
   revokeCurrentSession,
@@ -26,6 +28,7 @@ import {
   requestSignInOtp,
   selectOrganizationForCurrentSession,
   signInWithEmailPassword,
+  signInWithStudentAccessCode,
   verifyEmailSignUpOtp,
   verifySignInOtp,
 } from "@/lib/auth/service";
@@ -38,6 +41,7 @@ import {
   organizationSelectionSchema,
   otpRequestSchema,
   otpVerificationSchema,
+  studentAccessCodeSignInSchema,
 } from "@/lib/auth/validation";
 import { completeOnboardingWithRegistrationCode } from "@/lib/workspace/registration-codes";
 
@@ -72,6 +76,36 @@ export async function signInWithEmailAction(
   } catch (error) {
     return {
       ...initialEmailSignInState,
+      status: "error",
+      message: getPublicAuthenticationMessage(error),
+    };
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE_NAME, result.sessionToken, sessionCookieOptions);
+  redirectAfterAuthentication(result);
+}
+
+export async function signInWithStudentAccessCodeAction(
+  _previousState: StudentAccessCodeSignInState,
+  formData: FormData,
+): Promise<StudentAccessCodeSignInState> {
+  const parsed = studentAccessCodeSignInSchema.safeParse({ code: formData.get("code") });
+
+  if (!parsed.success) {
+    return {
+      ...initialStudentAccessCodeSignInState,
+      status: "error",
+      message: parsed.error.issues[0]?.message ?? "Enter the student access code.",
+    };
+  }
+
+  let result;
+  try {
+    result = await signInWithStudentAccessCode(parsed.data.code);
+  } catch (error) {
+    return {
+      ...initialStudentAccessCodeSignInState,
       status: "error",
       message: getPublicAuthenticationMessage(error),
     };

@@ -17,6 +17,11 @@ export type EmailSignUpVerificationState = {
   status: "idle" | "error";
 };
 
+export type StudentAccessCodeSignInState = {
+  message?: string;
+  status: "idle" | "error";
+};
+
 export type OnboardingState = {
   message?: string;
   status: "idle" | "error";
@@ -39,6 +44,7 @@ export type OtpVerificationState = {
 export const initialEmailSignInState: EmailSignInState = { status: "idle" };
 export const initialEmailSignUpRequestState: EmailSignUpRequestState = { status: "idle" };
 export const initialEmailSignUpVerificationState: EmailSignUpVerificationState = { status: "idle" };
+export const initialStudentAccessCodeSignInState: StudentAccessCodeSignInState = { status: "idle" };
 export const initialOnboardingState: OnboardingState = { status: "idle" };
 export const initialOtpRequestState: OtpRequestState = { status: "idle" };
 export const initialOtpVerificationState: OtpVerificationState = { status: "idle" };

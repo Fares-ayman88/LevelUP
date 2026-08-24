@@ -4,9 +4,11 @@ import {
   emailPasswordSignInSchema,
   emailPasswordSignUpSchema,
   emailSignUpVerificationSchema,
+  onboardingSchema,
   organizationSelectionSchema,
   otpRequestSchema,
   otpVerificationSchema,
+  studentAccessCodeSignInSchema,
 } from "./validation";
 
 describe("authentication form validation", () => {
@@ -67,6 +69,42 @@ describe("authentication form validation", () => {
       }).success,
     ).toBe(true);
     expect(otpVerificationSchema.safeParse({ challengeId: "not-a-uuid", code: "12a456", phone: "010" }).success).toBe(false);
+  });
+
+  it("requires a center invitation and a student ID only for guardians", () => {
+    const studentResult = onboardingSchema.safeParse({
+      gradeLevel: "3rd Secondary",
+      registrationCode: "LU-ABCD-EFGH-IJKL",
+      relationship: "",
+      role: "student",
+      studentCode: null,
+    });
+
+    expect(studentResult.success).toBe(true);
+    if (studentResult.success) {
+      expect(studentResult.data.studentCode).toBe("");
+    }
+
+    expect(onboardingSchema.safeParse({
+      gradeLevel: "3rd Secondary",
+      registrationCode: null,
+      relationship: "",
+      role: "student",
+      studentCode: null,
+    }).success).toBe(false);
+
+    expect(onboardingSchema.safeParse({
+      gradeLevel: "",
+      registrationCode: "LU-ABCD-EFGH-IJKL",
+      relationship: "Parent",
+      role: "guardian",
+      studentCode: null,
+    }).success).toBe(false);
+  });
+
+  it("accepts a student access code with its own form schema", () => {
+    expect(studentAccessCodeSignInSchema.safeParse({ code: "STU-ABCD-EFGH-IJKL-MNPQ" }).success).toBe(true);
+    expect(studentAccessCodeSignInSchema.safeParse({ code: "short" }).success).toBe(false);
   });
 
   it("rejects a malformed organization choice", () => {

@@ -1,8 +1,19 @@
 import { requireActiveOrganization } from "@/lib/auth/dal";
+import { FamilyNav } from "@/components/nav/family-nav";
 import { WorkspaceMobileNav, WorkspaceSidebar, WorkspaceTopBar } from "@/components/nav/workspace-nav";
 
 export default async function WorkspaceLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const { organization, session } = await requireActiveOrganization();
+  const isFamilyExperience = organization.roles.length > 0 && organization.roles.every((role) => role === "student" || role === "guardian");
+
+  if (isFamilyExperience) {
+    return (
+      <div className="min-h-screen bg-[#07090d] text-white">
+        <FamilyNav orgName={organization.name} roles={organization.roles} userName={session.userName} />
+        <main className="min-h-[calc(100vh-4rem)] overflow-x-hidden">{children}</main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-[#07090d] text-white">
@@ -18,7 +29,6 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
         {/* Top bar — visible on all screen sizes */}
         <WorkspaceTopBar
           orgName={organization.name}
-          roles={organization.roles}
           userName={session.userName}
         />
 
@@ -33,4 +43,3 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     </div>
   );
 }
-

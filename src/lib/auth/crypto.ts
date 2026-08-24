@@ -32,6 +32,10 @@ export function normalizeRegistrationCode(code: string): string {
   return code.trim().toUpperCase().replace(/[\s_]+/g, "-");
 }
 
+export function normalizeStudentAccessCode(code: string): string {
+  return code.trim().toUpperCase().replace(/[\s_]+/g, "-");
+}
+
 export function hashRegistrationCode(code: string): string {
   return hash(`registration-code:${normalizeRegistrationCode(code)}`);
 }
@@ -40,6 +44,16 @@ export function createRegistrationCode(): string {
   const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
   const segment = () => Array.from({ length: 4 }, () => alphabet[randomInt(0, alphabet.length)]).join("");
   return `LU-${segment()}-${segment()}-${segment()}`;
+}
+
+export function createStudentAccessCode(): string {
+  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const segment = () => Array.from({ length: 4 }, () => alphabet[randomInt(0, alphabet.length)]).join("");
+  return `STU-${segment()}-${segment()}-${segment()}-${segment()}`;
+}
+
+export function hashStudentAccessCode(code: string): string {
+  return hash(`student-access-code:${normalizeStudentAccessCode(code)}`);
 }
 
 export function safelyMatchesHash(expected: string, received: string): boolean {

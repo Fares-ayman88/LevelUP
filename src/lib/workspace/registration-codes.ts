@@ -8,7 +8,6 @@ import {
   guardianStudentLinks,
   organizationMemberships,
   organizationRegistrationCodes,
-  organizations,
   studentProfiles,
   users,
 } from "@/db/schema";
@@ -222,7 +221,7 @@ export async function completeOnboardingWithRegistrationCode(input: CompleteOnbo
   const session = await getCurrentSession();
   if (!session) throw new AuthenticationError("Your session has expired. Sign in again.");
 
-  const registrationCode = input.registrationCode ? normalizeRegistrationCode(input.registrationCode) : "";
+  const registrationCode = normalizeRegistrationCode(input.registrationCode);
   const relationship = input.relationship ? input.relationship.trim() : "Parent";
   const gradeLevel = input.gradeLevel ? input.gradeLevel.trim() : "1st Secondary";
   const now = new Date();
@@ -245,36 +244,28 @@ export async function completeOnboardingWithRegistrationCode(input: CompleteOnbo
 
     if (!activeSession) throw new AuthenticationError("Your session has expired. Sign in again.");
 
-    let targetOrganizationId = "";
-    let matchedCode: typeof organizationRegistrationCodes.$inferSelect | null = null;
+    if (!registrationCode) throw new RegistrationCodeError("Enter the invitation code from your center.");
 
-    if (registrationCode) {
-      const [code] = await tx
-        .select()
-        .from(organizationRegistrationCodes)
-        .where(eq(organizationRegistrationCodes.codeHash, hashRegistrationCode(registrationCode)))
-        .for("update")
-        .limit(1);
+    const [matchedCode] = await tx
+      .select()
+      .from(organizationRegistrationCodes)
+      .where(eq(organizationRegistrationCodes.codeHash, hashRegistrationCode(registrationCode)))
+      .for("update")
+      .limit(1);
 
-      if (
-        !code
-        || !code.isActive
-        || code.usedCount >= code.maxUses
-        || (code.expiresAt !== null && code.expiresAt <= now)
-      ) {
-        throw new RegistrationCodeError();
-      }
-      if (code.role !== input.role) {
-        throw new RegistrationCodeError("This center access code is for a different account type.");
-      }
-
-      matchedCode = code;
-      targetOrganizationId = code.organizationId;
-    } else {
-      const [defaultOrg] = await tx.select({ id: organizations.id }).from(organizations).limit(1);
-      if (!defaultOrg) throw new RegistrationCodeError("No active center found. Please contact support.");
-      targetOrganizationId = defaultOrg.id;
+    if (
+      !matchedCode
+      || !matchedCode.isActive
+      || matchedCode.usedCount >= matchedCode.maxUses
+      || (matchedCode.expiresAt !== null && matchedCode.expiresAt <= now)
+    ) {
+      throw new RegistrationCodeError();
     }
+    if (matchedCode.role !== input.role) {
+      throw new RegistrationCodeError("This center invitation is for a different account type.");
+    }
+
+    const targetOrganizationId = matchedCode.organizationId;
 
     const [user] = await tx
       .select({ fullName: users.fullName, id: users.id, status: users.status })
@@ -404,16 +395,14 @@ export async function completeOnboardingWithRegistrationCode(input: CompleteOnbo
       entityType = "guardian_student_link";
     }
 
-    if (matchedCode) {
-      const nextUsedCount = matchedCode.usedCount + 1;
-      await tx
-        .update(organizationRegistrationCodes)
-        .set({
-          isActive: nextUsedCount < matchedCode.maxUses,
-          usedCount: nextUsedCount,
-        })
-        .where(eq(organizationRegistrationCodes.id, matchedCode.id));
-    }
+    const nextUsedCount = matchedCode.usedCount + 1;
+    await tx
+      .update(organizationRegistrationCodes)
+      .set({
+        isActive: nextUsedCount < matchedCode.maxUses,
+        usedCount: nextUsedCount,
+      })
+      .where(eq(organizationRegistrationCodes.id, matchedCode.id));
 
     await tx.update(authSessions).set({ organizationId: targetOrganizationId }).where(eq(authSessions.id, activeSession.id));
 
@@ -422,7 +411,7 @@ export async function completeOnboardingWithRegistrationCode(input: CompleteOnbo
       actorMembershipId: membershipId,
       entityId,
       entityType,
-      metadata: { registrationCodeId: matchedCode?.id ?? "auto_enrolled", role: input.role },
+      metadata: { registrationCodeId: matchedCode.id, role: input.role },
       organizationId: targetOrganizationId,
     });
   });

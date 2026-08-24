@@ -9,6 +9,7 @@ import {
   createGuardianAndLinkStudent,
   createStaffAccount,
   createStudent,
+  resetStudentAccessCode,
 } from "@/lib/workspace/center-people";
 import {
   initialCenterPeopleActionState,
@@ -57,6 +58,10 @@ const staffSchema = z.object({
   role: z.enum(["teacher", "assistant", "center_admin"]),
 });
 
+const studentAccessCodeResetSchema = z.object({
+  studentProfileId: z.string().uuid(),
+});
+
 function errorState(message: string): CenterPeopleActionState {
   return { ...initialCenterPeopleActionState, message, status: "error" };
 }
@@ -87,13 +92,39 @@ export async function createStudentAction(
   if (!parsed.success) return errorState(parsed.error.issues[0]?.message ?? "Check the student details.");
 
   try {
-    await createStudent({ ...parsed.data, email: parsed.data.email || null, password: parsed.data.password || null });
+    const result = await createStudent({ ...parsed.data, email: parsed.data.email || null, password: parsed.data.password || null });
+    revalidatePeoplePages();
+    return {
+      message: result.studentAccessCode
+        ? "Student added. Share the access code privately now."
+        : "Student account created.",
+      status: "success",
+      studentAccessCode: result.studentAccessCode ?? undefined,
+      studentName: parsed.data.fullName,
+    };
   } catch (error) {
     return personErrorState(error);
   }
+}
 
-  revalidatePeoplePages();
-  return { message: parsed.data.email ? "Student account created." : "Student added without a sign-in account.", status: "success" };
+export async function resetStudentAccessCodeAction(
+  _previousState: CenterPeopleActionState,
+  formData: FormData,
+): Promise<CenterPeopleActionState> {
+  const parsed = studentAccessCodeResetSchema.safeParse({ studentProfileId: formData.get("studentProfileId") });
+  if (!parsed.success) return errorState("Choose a student from this center.");
+
+  try {
+    const studentAccessCode = await resetStudentAccessCode(parsed.data.studentProfileId);
+    revalidatePeoplePages();
+    return {
+      message: "A new private access code is ready. The previous code no longer works.",
+      status: "success",
+      studentAccessCode,
+    };
+  } catch (error) {
+    return personErrorState(error);
+  }
 }
 
 export async function createGuardianAction(

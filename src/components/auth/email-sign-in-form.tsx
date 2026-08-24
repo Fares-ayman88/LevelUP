@@ -130,6 +130,14 @@ export function EmailSignInForm({ googleEnabled, googleError }: EmailSignInFormP
         </button>
       </form>
 
+      <Link className="flex items-center justify-between gap-4 border border-white/10 bg-white/[0.025] px-4 py-3 text-sm transition hover:border-[#9db2ff]/45 hover:bg-white/[0.05]" href="/student-access">
+        <span className="flex min-w-0 items-center gap-3 text-slate-300">
+          <KeyRound aria-hidden="true" className="shrink-0 text-[#9db2ff]" size={17} />
+          <span className="min-w-0"><span className="block font-semibold text-white">Student without a phone or email?</span><span className="mt-0.5 block text-xs text-slate-500">Use the private code from your center.</span></span>
+        </span>
+        <ArrowRight aria-hidden="true" className="shrink-0 text-[#9db2ff]" size={17} />
+      </Link>
+
       <p className="text-center text-sm text-slate-400">
         ليس لديك حساب بعد؟{" "}
         <Link className="font-semibold text-[#b6c5ff] transition hover:text-white" href="/sign-up">

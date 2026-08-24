@@ -45,14 +45,14 @@ export default async function OnboardingPage() {
           <section className="max-w-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9db2ff]">One last step</p>
             <h1 className="mt-5 text-4xl font-semibold leading-[1.06] text-white sm:text-5xl">Connect {session.userName.split(" ")[0]} to the right center.</h1>
-            <p className="mt-6 text-base leading-7 text-slate-300">Your center gives students and guardians a private access code. It keeps every center and family account separate.</p>
+            <p className="mt-6 text-base leading-7 text-slate-300">Enter the center invitation code supplied by the center team. It connects this account to the correct center and is never used as your password.</p>
             <div className="mt-8 flex items-center gap-2 text-sm text-slate-400"><ShieldCheck aria-hidden="true" className="text-[#9db2ff]" size={17} /> Center-scoped access</div>
           </section>
 
           <section className="border border-white/10 bg-[#10131b]/75 p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8">
             <div className="mb-6">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9db2ff]">Center connection</p>
-              <h2 className="mt-2 text-2xl font-semibold">Open your workspace.</h2>
+              <h2 className="mt-2 text-2xl font-semibold">Connect to your center.</h2>
             </div>
             <CompleteOnboardingForm />
           </section>

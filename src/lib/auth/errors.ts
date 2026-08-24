@@ -43,6 +43,13 @@ export class InvalidCredentialsError extends AuthenticationError {
   }
 }
 
+export class StudentAccessCodeError extends AuthenticationError {
+  constructor() {
+    super("That student access code is invalid or is no longer active. Ask the center to reset it.");
+    this.name = "StudentAccessCodeError";
+  }
+}
+
 export class AccountAlreadyExistsError extends AuthenticationError {
   constructor(message = "An account with this email already exists. Sign in instead.") {
     super(message);

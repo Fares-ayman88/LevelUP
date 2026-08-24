@@ -8,14 +8,12 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
-  ClipboardCheck,
   CreditCard,
   GraduationCap,
   KeyRound,
   LayoutDashboard,
   LogOut,
   MessageSquare,
-  Settings2,
   UsersRound,
 } from "lucide-react";
 import { type Role } from "@/lib/authorization/permissions";
@@ -48,6 +46,7 @@ function teacherNav(): NavItem[] {
 
 function assistantNav(): NavItem[] {
   return [
+    { href: "/app/admin/people", label: "Students", icon: UsersRound },
     { href: "/app/assistant/payments", label: "Payments", icon: CreditCard },
     { href: "/app/assistant/makeup", label: "Alt. classes", icon: CalendarClock },
   ];
@@ -218,9 +217,8 @@ function MobileNavLink({ item }: { item: NavItem }) {
 export function WorkspaceTopBar({
   orgName,
   userName,
-  roles,
   extra,
-}: WorkspaceNavProps & { extra?: React.ReactNode }) {
+}: Omit<WorkspaceNavProps, "roles"> & { extra?: React.ReactNode }) {
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[#07090d]/95 px-4 backdrop-blur-xl sm:px-6">
       {/* Mobile: brand */}

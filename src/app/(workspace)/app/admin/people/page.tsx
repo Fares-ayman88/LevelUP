@@ -5,8 +5,9 @@ import {
   CreateGuardianForm,
   CreateStaffAccountForm,
   CreateStudentForm,
+  ResetStudentAccessCodeButton,
 } from "@/components/admin/people-forms";
-import { getCenterStudentDirectory } from "@/lib/workspace/center-people";
+import { getCenterStudentDirectory, getCurrentCenterPeopleWorkspace } from "@/lib/workspace/center-people";
 import { getCurrentCenterAdminWorkspace } from "@/lib/workspace/payment-channels";
 
 export const metadata = {
@@ -14,7 +15,8 @@ export const metadata = {
 };
 
 export default async function CenterPeoplePage() {
-  const context = await getCurrentCenterAdminWorkspace();
+  const adminContext = await getCurrentCenterAdminWorkspace();
+  const context = adminContext ?? await getCurrentCenterPeopleWorkspace();
   if (!context) notFound();
 
   const students = await getCenterStudentDirectory();
@@ -33,10 +35,10 @@ export default async function CenterPeoplePage() {
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">Students can be added before they need a sign-in. Parents receive separate email accounts and can be linked to one or more children.</p>
         </section>
 
-        <section className="grid gap-px bg-white/10 lg:grid-cols-3">
+        <section className={`grid gap-px bg-white/10 ${adminContext ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
           <article className="bg-[#07090d] p-5 sm:p-6"><CreateStudentForm /></article>
           <article className="bg-[#07090d] p-5 sm:p-6"><CreateGuardianForm students={studentOptions} /></article>
-          <article className="bg-[#07090d] p-5 sm:p-6"><CreateStaffAccountForm /></article>
+          {adminContext && <article className="bg-[#07090d] p-5 sm:p-6"><CreateStaffAccountForm /></article>}
         </section>
 
         <section className="flex items-center justify-between gap-4 border-b border-white/10 pt-12 pb-5">
@@ -49,18 +51,21 @@ export default async function CenterPeoplePage() {
         {students.length ? (
           <section className="border-b border-white/10">
             {students.map((student) => (
-              <article className="grid gap-3 border-t border-white/8 py-5 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(150px,0.55fr)_minmax(130px,0.45fr)] sm:items-center" key={student.id}>
+              <article className="grid gap-3 border-t border-white/8 py-5 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(180px,0.55fr)_minmax(130px,0.45fr)] sm:items-center" key={student.id}>
                 <div className="min-w-0">
                   <p className="truncate text-base font-semibold">{student.fullName}</p>
                   <p className="mt-1 text-sm text-slate-400">{student.gradeLevel}</p>
                 </div>
                 <div className="min-w-0 text-sm text-slate-300">
                   <p className="font-medium">{student.studentCode}</p>
-                  <p className="mt-1 truncate text-xs text-slate-500">{student.email ?? "No student email account"}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{student.email ?? "No email or phone sign-in"}</p>
                 </div>
-                <p className={student.hasStudentAccount ? "text-sm font-medium text-emerald-300" : "text-sm font-medium text-amber-200"}>
-                  {student.hasStudentAccount ? "Student account" : "No student account"}
-                </p>
+                <div>
+                  <p className={student.hasEmailSignIn ? "text-sm font-medium text-emerald-300" : student.hasStudentAccessCode ? "text-sm font-medium text-[#b9c6ff]" : "text-sm font-medium text-amber-200"}>
+                    {student.hasEmailSignIn ? "Email sign-in" : student.hasStudentAccessCode ? "Access code active" : "No sign-in yet"}
+                  </p>
+                  {!student.hasEmailSignIn && <div className="mt-3"><ResetStudentAccessCodeButton studentName={student.fullName} studentProfileId={student.id} /></div>}
+                </div>
                 <p className="text-sm text-slate-400">{student.linkedGuardianCount} guardian{student.linkedGuardianCount === 1 ? "" : "s"}</p>
               </article>
             ))}

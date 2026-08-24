@@ -1,12 +1,13 @@
 "use client";
 
-import { Check, LoaderCircle, Plus, UserPlus, UsersRound } from "lucide-react";
-import { useActionState } from "react";
+import { Check, Copy, LoaderCircle, Plus, RotateCcw, UserPlus, UsersRound } from "lucide-react";
+import { useActionState, useState } from "react";
 
 import {
   createGuardianAction,
   createStaffAccountAction,
   createStudentAction,
+  resetStudentAccessCodeAction,
 } from "@/app/actions/center-people";
 import { initialCenterPeopleActionState } from "@/lib/workspace/center-people-state";
 
@@ -23,6 +24,34 @@ function FormMessage({ message, status }: { message?: string; status: "error" | 
     <p className={status === "error" ? "text-xs leading-5 text-rose-300" : "text-xs leading-5 text-emerald-300"} role={status === "error" ? "alert" : "status"}>
       {message}
     </p>
+  );
+}
+
+function StudentAccessCodePanel({ code, studentName }: { code: string; studentName?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="border border-[#9db2ff]/35 bg-[#9db2ff]/[0.08] p-3" role="status">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#b9c6ff]">Private student access code</p>
+          <p className="mt-1 text-xs leading-5 text-slate-300">{studentName ? `Give this only to ${studentName}.` : "Give this only to the student."} It will not be shown again after this page is closed.</p>
+        </div>
+        <button aria-label="Copy student access code" className="grid h-8 w-8 shrink-0 place-items-center border border-[#9db2ff]/35 text-[#c7d2ff] transition hover:bg-[#9db2ff]/15" onClick={copyCode} title="Copy access code" type="button">
+          {copied ? <Check aria-hidden="true" size={15} /> : <Copy aria-hidden="true" size={15} />}
+        </button>
+      </div>
+      <code className="mt-3 block break-all border border-white/10 bg-black/25 px-3 py-2 text-sm font-semibold tracking-[0.1em] text-white">{code}</code>
+    </div>
   );
 }
 
@@ -59,7 +88,8 @@ export function CreateStudentForm() {
           <input autoComplete="new-password" className="mt-2 h-10 w-full border border-white/10 bg-black/20 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-[#9db2ff]/60" disabled={pending} id="student-password" minLength={8} name="password" placeholder="At least 8 characters" type="password" />
         </div>
       </div>
-      <p className="text-xs leading-5 text-slate-500">Leave both fields empty when the student does not need a personal sign-in yet.</p>
+      <p className="text-xs leading-5 text-slate-500">Leave both fields empty for a student without a phone or email. LevelUp will create a private access code for them.</p>
+      {state.studentAccessCode && <StudentAccessCodePanel code={state.studentAccessCode} studentName={state.studentName} />}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4">
         <FormMessage message={state.message} status={state.status} />
         <button className="inline-flex h-10 items-center justify-center gap-2 bg-[#9db2ff] px-3 text-sm font-semibold text-[#0a0c12] transition hover:bg-[#b6c5ff] disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} type="submit">
@@ -68,6 +98,24 @@ export function CreateStudentForm() {
         </button>
       </div>
     </form>
+  );
+}
+
+export function ResetStudentAccessCodeButton({ studentProfileId, studentName }: { studentProfileId: string; studentName: string }) {
+  const [state, action, pending] = useActionState(resetStudentAccessCodeAction, initialCenterPeopleActionState);
+
+  return (
+    <div className="space-y-2">
+      <form action={action}>
+        <input name="studentProfileId" type="hidden" value={studentProfileId} />
+        <button className="inline-flex h-9 items-center gap-2 border border-white/10 px-3 text-xs font-semibold text-slate-300 transition hover:border-[#9db2ff]/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} type="submit">
+          {pending ? <LoaderCircle aria-hidden="true" className="animate-spin" size={14} /> : <RotateCcw aria-hidden="true" size={14} />}
+          {pending ? "Resetting" : "Reset access code"}
+        </button>
+      </form>
+      {state.status === "error" && <FormMessage message={state.message} status={state.status} />}
+      {state.studentAccessCode && <StudentAccessCodePanel code={state.studentAccessCode} studentName={studentName} />}
+    </div>
   );
 }
 

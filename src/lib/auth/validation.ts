@@ -25,23 +25,27 @@ export const emailSignUpVerificationSchema = z.object({
   email: z.string().trim().email("Enter a valid email address.").max(320, "Keep the email under 320 characters."),
 });
 
+function optionalFormText(defaultValue: string, maxLength: number, message: string) {
+  return z.preprocess(
+    (value) => value === null ? undefined : value,
+    z.string().trim().max(maxLength, message).optional().default(defaultValue),
+  );
+}
+
+function requiredFormText(maxLength: number, requiredMessage: string, tooLongMessage: string) {
+  return z.preprocess(
+    (value) => value === null ? "" : value,
+    z.string().trim().min(3, requiredMessage).max(maxLength, tooLongMessage),
+  );
+}
+
 export const onboardingSchema = z
   .object({
     gradeLevel: z.string().trim().max(80, "Keep the grade under 80 characters.").optional().default("1st Secondary"),
-    registrationCode: z
-      .string()
-      .trim()
-      .max(48, "Keep the center access code under 48 characters.")
-      .optional()
-      .default(""),
+    registrationCode: requiredFormText(48, "Enter the invitation code from your center.", "Keep the center invitation code under 48 characters."),
     relationship: z.string().trim().max(40, "Keep the relationship under 40 characters.").optional().default("Parent"),
     role: z.enum(["student", "guardian"]),
-    studentCode: z
-      .string()
-      .trim()
-      .max(48, "Keep the student code under 48 characters.")
-      .optional()
-      .default(""),
+    studentCode: optionalFormText("", 48, "Keep the student code under 48 characters."),
   })
   .superRefine((value, context) => {
     if (value.role === "student") {
@@ -54,7 +58,15 @@ export const onboardingSchema = z
     if (!value.relationship || value.relationship.length < 2) {
       context.addIssue({ code: "custom", message: "Enter your relationship to the student.", path: ["relationship"] });
     }
+
+    if (!value.studentCode) {
+      context.addIssue({ code: "custom", message: "Enter the student ID supplied by the center.", path: ["studentCode"] });
+    }
   });
+
+export const studentAccessCodeSignInSchema = z.object({
+  code: z.string().trim().min(8, "Enter the student access code.").max(64, "Keep the access code under 64 characters."),
+});
 
 export const otpRequestSchema = z.object({
   phone: z.string().trim().min(1).max(32),

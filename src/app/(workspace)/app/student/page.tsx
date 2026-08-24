@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { BarChart3, CalendarDays, Clock3, CreditCard, GraduationCap, LogOut, Search, SlidersHorizontal, UsersRound } from "lucide-react";
+import { CalendarDays, Clock3, Search, SlidersHorizontal, UsersRound } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { signOutAction } from "@/app/actions/auth";
 import { AcceptWaitlistOfferButton } from "@/components/student/accept-waitlist-offer-button";
 import { BookGroupButton } from "@/components/student/book-group-button";
 import { TeacherAvatar } from "@/components/teacher/teacher-avatar";
@@ -61,20 +60,13 @@ export default async function StudentDiscoveryPage({
   ]);
 
   return (
-    <main className="min-h-screen bg-[#07090d] px-4 py-4 text-white sm:px-8 sm:py-8">
+    <div className="px-4 py-6 text-white sm:px-8 sm:py-8">
       <div className="mx-auto w-full max-w-[1500px]">
-        <header className="flex flex-col gap-3 border border-white/10 bg-white/[0.025] p-3 backdrop-blur-xl xl:flex-row xl:items-center">
-          <div className="flex shrink-0 items-center gap-3 px-1">
-            <span className="grid h-10 w-10 place-items-center border border-[#9db2ff]/30 bg-[#9db2ff]/10 text-[#9db2ff]">
-              <GraduationCap aria-hidden="true" size={20} />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">LevelUp</p>
-              <p className="truncate text-xs text-slate-500">{context.organization.name}</p>
-            </div>
-          </div>
-
-          <form action="/app/student" className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_150px_145px_auto]">
+        <section className="border-b border-white/10 pb-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9db2ff]">Find a class</p>
+          <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">Choose the group that fits your week.</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">Compare teachers, times, availability, and fees before you reserve a seat.</p>
+          <form action="/app/student" className="mt-6 grid min-w-0 gap-2 sm:grid-cols-[minmax(180px,1fr)_150px_145px_auto]">
             <label className="relative block">
               <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9db2ff]" size={17} />
               <span className="sr-only">Search teacher or subject</span>
@@ -100,25 +92,7 @@ export default async function StudentDiscoveryPage({
               Search
             </button>
           </form>
-
-          <div className="flex items-center justify-between gap-2 px-1 xl:justify-end">
-            <span className="text-xs text-slate-500">{context.student.fullName}</span>
-            <Link aria-label="Open schedule" className="grid h-10 w-10 place-items-center border border-white/10 text-slate-300 transition hover:border-white/25 hover:text-white" href="/app/student/schedule">
-              <CalendarDays aria-hidden="true" size={17} />
-            </Link>
-            <Link aria-label="Open progress" className="grid h-10 w-10 place-items-center border border-white/10 text-slate-300 transition hover:border-white/25 hover:text-white" href="/app/student/progress">
-              <BarChart3 aria-hidden="true" size={17} />
-            </Link>
-            <Link aria-label="Open payments" className="grid h-10 w-10 place-items-center border border-white/10 text-slate-300 transition hover:border-white/25 hover:text-white" href="/app/student/payments">
-              <CreditCard aria-hidden="true" size={17} />
-            </Link>
-            <form action={signOutAction}>
-              <button aria-label="Sign out" className="grid h-10 w-10 place-items-center border border-white/10 text-slate-300 transition hover:border-white/25 hover:text-white" type="submit">
-                <LogOut aria-hidden="true" size={17} />
-              </button>
-            </form>
-          </div>
-        </header>
+        </section>
 
         {waitlistOffers.length > 0 && (
           <section aria-labelledby="waitlist-offers-heading" className="mt-6 border border-[#9db2ff]/30 bg-[#9db2ff]/[0.07]">
@@ -147,7 +121,7 @@ export default async function StudentDiscoveryPage({
         <section className="flex flex-col justify-between gap-5 py-10 sm:flex-row sm:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9db2ff]">{context.student.gradeLevel}</p>
-            <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">Choose the group that fits your week.</h1>
+            <h2 className="mt-3 text-2xl font-semibold sm:text-3xl">Available groups</h2>
           </div>
           <p className="text-sm text-slate-400">{groups.length} matching group{groups.length === 1 ? "" : "s"}</p>
         </section>
@@ -198,6 +172,6 @@ export default async function StudentDiscoveryPage({
           </section>
         )}
       </div>
-    </main>
+    </div>
   );
 }
