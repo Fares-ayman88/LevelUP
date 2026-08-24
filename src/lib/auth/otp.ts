@@ -1,4 +1,4 @@
-export type OtpPurpose = "sign_in" | "verify_phone";
+export type OtpPurpose = "sign_in" | "sign_up" | "verify_phone";
 
 export type OtpChallenge = {
   destination: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, CheckCircle2, LoaderCircle, LockKeyhole, Phone, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, LoaderCircle, LockKeyhole, MessageCircle, Phone, RefreshCw, ShieldCheck } from "lucide-react";
 import { useActionState, useState } from "react";
 
 import { requestSignInOtpAction, verifySignInOtpAction } from "@/app/actions/auth";
@@ -21,9 +21,9 @@ export function PhoneSignInForm() {
     return (
       <div className="space-y-6">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9db2ff]">Verify your number</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9db2ff]">Verify WhatsApp</p>
           <h2 className="mt-2 text-2xl font-semibold text-white">Enter the six-digit code.</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">We sent a code to {requestState.phoneE164}.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">We sent a code via WhatsApp to {requestState.phoneE164}.</p>
         </div>
 
         {requestState.developmentCode && (
@@ -87,9 +87,9 @@ export function PhoneSignInForm() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9db2ff]">Secure sign in</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9db2ff]">Sign in with WhatsApp</p>
         <h2 className="mt-2 text-2xl font-semibold text-white">Your learning space, ready when you are.</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">Enter the Egyptian mobile number connected to your LevelUp account.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-400">Enter the Egyptian WhatsApp number connected to your LevelUp account.</p>
       </div>
 
       <form
@@ -126,8 +126,8 @@ export function PhoneSignInForm() {
           disabled={requesting}
           type="submit"
         >
-          {requesting ? <LoaderCircle aria-hidden="true" className="animate-spin" size={18} /> : <CheckCircle2 aria-hidden="true" size={18} />}
-          {requesting ? "Sending code" : "Send verification code"}
+          {requesting ? <LoaderCircle aria-hidden="true" className="animate-spin" size={18} /> : <MessageCircle aria-hidden="true" size={18} />}
+          {requesting ? "Sending code" : "Send WhatsApp code"}
           {!requesting && <ArrowRight aria-hidden="true" size={17} />}
         </button>
       </form>

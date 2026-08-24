@@ -5,16 +5,19 @@ import { runMigrations } from "./migrate.mjs";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-const databaseUrl = process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL_TEST;
 
 if (!databaseUrl) {
-  throw new Error("DATABASE_URL_TEST or DATABASE_URL is required before running test migrations.");
+  throw new Error("DATABASE_URL_TEST is required before running test migrations. Never fall back to DATABASE_URL.");
 }
 
-const databaseName = new URL(databaseUrl).pathname.replace(/^\//, "");
+function databaseTarget(connectionString) {
+  const url = new URL(connectionString);
+  return `${url.protocol}//${url.hostname}:${url.port || "5432"}${url.pathname}`;
+}
 
-if (!databaseName.endsWith("_test")) {
-  throw new Error("Test migrations require a database name ending in _test.");
+if (process.env.DATABASE_URL && databaseTarget(databaseUrl) === databaseTarget(process.env.DATABASE_URL)) {
+  throw new Error("DATABASE_URL_TEST must point to a separate test database or Supabase project, never the production database.");
 }
 
 runMigrations(databaseUrl).catch((error) => {

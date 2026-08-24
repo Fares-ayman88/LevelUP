@@ -14,16 +14,21 @@ vi.mock("next/headers", () => ({
 dotenv.config({ path: ".env.local", quiet: true });
 dotenv.config({ quiet: true });
 
-const databaseUrl = process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL;
-const databaseName = databaseUrl ? new URL(databaseUrl).pathname.replace(/^\//, "") : "";
+const databaseUrl = process.env.DATABASE_URL_TEST;
 
-if (databaseUrl && !databaseName.endsWith("_test")) {
-  throw new Error("Integration tests require a database name ending in _test.");
+function databaseTarget(connectionString: string) {
+  const url = new URL(connectionString);
+  return `${url.protocol}//${url.hostname}:${url.port || "5432"}${url.pathname}`;
+}
+
+if (databaseUrl && process.env.DATABASE_URL && databaseTarget(databaseUrl) === databaseTarget(process.env.DATABASE_URL)) {
+  throw new Error("DATABASE_URL_TEST must point to a separate test database or Supabase project, never the production database.");
 }
 
 if (databaseUrl) process.env.DATABASE_URL = databaseUrl;
 process.env.SESSION_SECRET ??= "a-session-secret-that-is-longer-than-thirty-two-characters";
 process.env.EMAIL_OTP_PROVIDER = "development";
+process.env.OTP_PROVIDER = "development";
 
 const databaseDescribe = databaseUrl ? describe : describe.skip;
 
@@ -134,9 +139,9 @@ databaseDescribe("self-service account onboarding", () => {
     expect(beforeVerification.rows[0]?.count).toBe(0);
 
     const wrongCode = request.developmentCode === "000000" ? "000001" : "000000";
-    await expect(verifyEmailSignUpOtp(email, request.challengeId, wrongCode)).rejects.toThrow("invalid or has expired");
+    await expect(verifyEmailSignUpOtp(request.challengeId, wrongCode)).rejects.toThrow("invalid or has expired");
 
-    const verified = await verifyEmailSignUpOtp(email, request.challengeId, request.developmentCode!);
+    const verified = await verifyEmailSignUpOtp(request.challengeId, request.developmentCode!);
     expect(verified.requiresOnboarding).toBe(true);
 
     const account = await client.query<{
@@ -153,5 +158,40 @@ databaseDescribe("self-service account onboarding", () => {
       phone_e164: "+20" + phone.slice(1),
     });
     expect(account.rows[0]?.email_verified_at).toBeInstanceOf(Date);
+  });
+
+  it("creates a phone-first account only after its WhatsApp OTP is verified", async () => {
+    const phone = "010" + String(Math.floor(10_000_000 + Math.random() * 90_000_000));
+    const { requestEmailSignUpOtp, verifyEmailSignUpOtp } = await import("@/lib/auth/service");
+
+    const request = await requestEmailSignUpOtp({
+      deliveryChannel: "whatsapp",
+      fullName: "WhatsApp Student",
+      phone,
+    });
+
+    expect(request.deliveryChannel).toBe("whatsapp");
+    expect(request.developmentCode).toMatch(/^\d{6}$/);
+
+    const verified = await verifyEmailSignUpOtp(request.challengeId, request.developmentCode!);
+    expect(verified.requiresOnboarding).toBe(true);
+
+    const account = await client.query<{
+      email: string | null;
+      email_verified_at: Date | null;
+      phone_e164: string;
+      phone_verified_at: Date | null;
+    }>(
+      "SELECT email, email_verified_at, phone_e164, phone_verified_at FROM users WHERE phone_e164 = $1",
+      ["+20" + phone.slice(1)],
+    );
+
+    expect(account.rows).toHaveLength(1);
+    expect(account.rows[0]).toMatchObject({
+      email: null,
+      phone_e164: "+20" + phone.slice(1),
+    });
+    expect(account.rows[0]?.email_verified_at).toBeNull();
+    expect(account.rows[0]?.phone_verified_at).toBeInstanceOf(Date);
   });
 });

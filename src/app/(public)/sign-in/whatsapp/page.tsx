@@ -1,38 +1,17 @@
+import { GraduationCap, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { GraduationCap, ShieldCheck } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import { EmailSignInForm } from "@/components/auth/email-sign-in-form";
-import { isGoogleSignInConfigured } from "@/lib/auth/google";
+import { PhoneSignInForm } from "@/components/auth/phone-sign-in-form";
 import { isWhatsAppOtpConfigured } from "@/lib/auth/otp-availability";
 
 export const metadata = {
-  title: "Sign in | LevelUp",
+  title: "Sign in with WhatsApp | LevelUp",
 };
 
-type SignInPageProps = {
-  searchParams: Promise<{ error?: string | string[] }>;
-};
-
-function googleErrorMessage(error: string | string[] | undefined): string | undefined {
-  const code = Array.isArray(error) ? error[0] : error;
-  if (code === "google_access_denied") return "Google sign-in was cancelled. Try again when you are ready.";
-  if (code === "google_not_configured") return "Google sign-in is not configured for this workspace yet.";
-  if (code === "google_unavailable") return "This Google account is not linked to an active LevelUp account yet.";
-  if (code === "google_failed") return "Google sign-in could not be completed. Please try again.";
-  return undefined;
-}
-
-export default async function SignInPage({ searchParams }: SignInPageProps) {
-  let error: string | string[] | undefined;
-  try {
-    const resolved = searchParams ? await searchParams : undefined;
-    error = resolved?.error;
-  } catch {
-    error = undefined;
-  }
-  const googleEnabled = isGoogleSignInConfigured();
-  const whatsAppEnabled = isWhatsAppOtpConfigured();
+export default function WhatsAppSignInPage() {
+  if (!isWhatsAppOtpConfigured()) redirect("/sign-in");
 
   return (
     <main className="relative isolate min-h-screen overflow-hidden bg-[#07090d] px-5 py-5 text-white sm:px-8 sm:py-8">
@@ -64,19 +43,15 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           <section className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9db2ff]">LevelUp workspace</p>
             <h1 className="mt-5 max-w-xl text-4xl font-semibold leading-[1.06] text-white sm:text-6xl">
-              A clearer start to every study day.
+              Open your study space with one code.
             </h1>
             <p className="mt-6 max-w-lg text-base leading-7 text-slate-300 sm:text-lg">
-              Your schedule, learning progress, and center updates live in one calm place.
+              No password to remember. We send the code to the WhatsApp number on your LevelUp account.
             </p>
           </section>
 
           <section className="border border-white/10 bg-[#10131b]/75 p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8">
-            <EmailSignInForm
-              googleEnabled={googleEnabled}
-              googleError={googleErrorMessage(error)}
-              whatsAppEnabled={whatsAppEnabled}
-            />
+            <PhoneSignInForm />
           </section>
         </div>
       </div>

@@ -26,6 +26,7 @@ import {
   createSessionToken,
   hashEmailSignUpOtpCode,
   hashOtpCode,
+  hashSignUpOtpCode,
   hashSessionToken,
   hashStudentAccessCode,
   normalizeStudentAccessCode,
@@ -43,7 +44,9 @@ import {
   OtpVerificationError,
   StudentAccessCodeError,
 } from "./errors";
-import { createInfobipOtpSender, developmentOtpSender } from "./otp";
+import { createMetaWhatsAppOtpSender } from "./meta-whatsapp";
+import type { SignUpOtpDeliveryChannel } from "./otp-delivery";
+import { createInfobipOtpSender, developmentOtpSender, type OtpPurpose } from "./otp";
 import { hashPassword, verifyPassword } from "./password";
 import { normalizeEgyptianMobile } from "./phone";
 import { SESSION_COOKIE_NAME, SESSION_DURATION_SECONDS } from "./session";
@@ -90,7 +93,9 @@ export type OtpRequestResult = {
 export type EmailSignUpOtpRequestResult = {
   challengeId: string;
   developmentCode?: string;
-  email: string;
+  deliveryChannel: SignUpOtpDeliveryChannel;
+  destination: string;
+  email?: string;
   expiresAt: Date;
 };
 
@@ -246,22 +251,44 @@ function groupMembershipsByOrganization(rows: MembershipRow[]): OrganizationChoi
   return [...organizationsById.values()];
 }
 
-async function sendOtp(destination: string, code: string) {
+async function sendOtp(destination: string, code: string, purpose: OtpPurpose) {
   const environment = getServerEnvironment();
 
   try {
     if (environment.OTP_PROVIDER === "development") {
-      return await developmentOtpSender.send({ destination, code, purpose: "sign_in" });
+      return await developmentOtpSender.send({ destination, code, purpose });
     }
 
-    return await createInfobipOtpSender({
-      apiKey: environment.INFOBIP_API_KEY!,
-      baseUrl: environment.INFOBIP_BASE_URL!,
-      senderId: environment.OTP_SENDER_ID!,
-    }).send({ destination, code, purpose: "sign_in" });
+    if (environment.OTP_PROVIDER === "infobip") {
+      return await createInfobipOtpSender({
+        apiKey: environment.INFOBIP_API_KEY!,
+        baseUrl: environment.INFOBIP_BASE_URL!,
+        senderId: environment.OTP_SENDER_ID!,
+      }).send({ destination, code, purpose });
+    }
+
+    return await createMetaWhatsAppOtpSender({
+      accessToken: environment.META_WHATSAPP_ACCESS_TOKEN!,
+      graphApiVersion: environment.META_WHATSAPP_GRAPH_API_VERSION!,
+      phoneNumberId: environment.META_WHATSAPP_PHONE_NUMBER_ID!,
+      templateLanguage: environment.META_WHATSAPP_TEMPLATE_LANGUAGE!,
+      templateName: environment.META_WHATSAPP_TEMPLATE_NAME!,
+    }).send({ destination, code, purpose });
   } catch {
     throw new OtpDeliveryError();
   }
+}
+
+function canDeliverSignUpOtp(
+  deliveryChannel: SignUpOtpDeliveryChannel,
+  environment: ReturnType<typeof getServerEnvironment>,
+): boolean {
+  if (deliveryChannel === "email") {
+    return environment.EMAIL_OTP_PROVIDER === "resend" || environment.NODE_ENV !== "production";
+  }
+
+  return environment.OTP_PROVIDER === "meta_whatsapp"
+    || (environment.NODE_ENV !== "production" && environment.OTP_PROVIDER === "development");
 }
 
 async function sendEmailSignUpOtp(destination: string, code: string, challengeId: string): Promise<void> {
@@ -338,7 +365,7 @@ export async function requestSignInOtp(phoneInput: string): Promise<OtpRequestRe
   });
 
   try {
-    await sendOtp(phoneE164, code);
+    await sendOtp(phoneE164, code, "sign_in");
   } catch (error) {
     await db.delete(otpChallenges).where(eq(otpChallenges.id, challengeId));
     throw error instanceof AuthenticationError ? error : new OtpDeliveryError();
@@ -420,22 +447,43 @@ export async function verifySignInOtp(
 }
 
 export async function requestEmailSignUpOtp(input: {
-  email: string;
+  deliveryChannel?: SignUpOtpDeliveryChannel;
+  email?: string;
   fullName: string;
-  password: string;
+  password?: string;
   phone: string;
 }): Promise<EmailSignUpOtpRequestResult> {
-  const email = normalizeEmailAddress(input.email);
+  const deliveryChannel = input.deliveryChannel ?? "email";
+  const email = input.email?.trim() ? normalizeEmailAddress(input.email) : null;
   const fullName = normalizeFullName(input.fullName);
   const phoneE164 = normalizeEgyptianMobile(input.phone);
+  const environment = getServerEnvironment();
+
+  if (!canDeliverSignUpOtp(deliveryChannel, environment)) {
+    throw new OtpDeliveryError();
+  }
+
+  if (deliveryChannel === "email" && (!email || !input.password)) {
+    throw new AuthenticationError("Enter your email address and password.");
+  }
+
   const db = getDatabase();
   const now = new Date();
   const requestWindowStart = new Date(now.getTime() - OTP_REQUEST_WINDOW_MS);
+  const matchingAccount = email
+    ? or(eq(users.email, email), eq(users.phoneE164, phoneE164))
+    : eq(users.phoneE164, phoneE164);
+  const matchingChallenge = email
+    ? or(
+        eq(emailSignupVerificationChallenges.email, email),
+        eq(emailSignupVerificationChallenges.phoneE164, phoneE164),
+      )
+    : eq(emailSignupVerificationChallenges.phoneE164, phoneE164);
 
   const [existingAccount] = await db
     .select({ id: users.id })
     .from(users)
-    .where(or(eq(users.email, email), eq(users.phoneE164, phoneE164)))
+    .where(matchingAccount)
     .limit(1);
 
   if (existingAccount) {
@@ -447,10 +495,7 @@ export async function requestEmailSignUpOtp(input: {
     .from(emailSignupVerificationChallenges)
     .where(
       and(
-        or(
-          eq(emailSignupVerificationChallenges.email, email),
-          eq(emailSignupVerificationChallenges.phoneE164, phoneE164),
-        ),
+        matchingChallenge,
         gt(emailSignupVerificationChallenges.createdAt, requestWindowStart),
       ),
     );
@@ -462,7 +507,8 @@ export async function requestEmailSignUpOtp(input: {
   const challengeId = randomUUID();
   const code = createOtpCode();
   const expiresAt = new Date(now.getTime() + OTP_EXPIRY_MS);
-  const passwordHash = await hashPassword(input.password);
+  const destination = deliveryChannel === "email" ? email! : phoneE164;
+  const passwordHash = deliveryChannel === "email" ? await hashPassword(input.password!) : null;
 
   await db.transaction(async (tx) => {
     await tx
@@ -470,10 +516,7 @@ export async function requestEmailSignUpOtp(input: {
       .set({ consumedAt: now })
       .where(
         and(
-          or(
-            eq(emailSignupVerificationChallenges.email, email),
-            eq(emailSignupVerificationChallenges.phoneE164, phoneE164),
-          ),
+          matchingChallenge,
           isNull(emailSignupVerificationChallenges.consumedAt),
         ),
       );
@@ -484,34 +527,39 @@ export async function requestEmailSignUpOtp(input: {
       phoneE164,
       fullName,
       passwordHash,
-      codeHash: hashEmailSignUpOtpCode(challengeId, email, code),
+      deliveryChannel,
+      codeHash: hashSignUpOtpCode(challengeId, deliveryChannel, destination, code),
       expiresAt,
     });
   });
 
   try {
-    await sendEmailSignUpOtp(email, code, challengeId);
+    if (deliveryChannel === "email") {
+      await sendEmailSignUpOtp(email!, code, challengeId);
+    } else {
+      await sendOtp(phoneE164, code, "sign_up");
+    }
   } catch (error) {
     await db.delete(emailSignupVerificationChallenges).where(eq(emailSignupVerificationChallenges.id, challengeId));
     throw error instanceof AuthenticationError ? error : new OtpDeliveryError();
   }
 
-  const environment = getServerEnvironment();
-
   return {
     challengeId,
-    developmentCode: environment.EMAIL_OTP_PROVIDER === "development" ? code : undefined,
-    email,
+    deliveryChannel,
+    destination,
+    developmentCode: deliveryChannel === "email"
+      ? environment.EMAIL_OTP_PROVIDER === "development" ? code : undefined
+      : environment.OTP_PROVIDER === "development" ? code : undefined,
+    email: email ?? undefined,
     expiresAt,
   };
 }
 
 export async function verifyEmailSignUpOtp(
-  emailInput: string,
   challengeId: string,
   code: string,
 ): Promise<VerifiedSignIn> {
-  const email = normalizeEmailAddress(emailInput);
   const db = getDatabase();
   const now = new Date();
 
@@ -522,6 +570,8 @@ export async function verifyEmailSignUpOtp(
         codeHash: emailSignupVerificationChallenges.codeHash,
         fullName: emailSignupVerificationChallenges.fullName,
         id: emailSignupVerificationChallenges.id,
+        deliveryChannel: emailSignupVerificationChallenges.deliveryChannel,
+        email: emailSignupVerificationChallenges.email,
         passwordHash: emailSignupVerificationChallenges.passwordHash,
         phoneE164: emailSignupVerificationChallenges.phoneE164,
       })
@@ -529,7 +579,6 @@ export async function verifyEmailSignUpOtp(
       .where(
         and(
           eq(emailSignupVerificationChallenges.id, challengeId),
-          eq(emailSignupVerificationChallenges.email, email),
           isNull(emailSignupVerificationChallenges.consumedAt),
           gt(emailSignupVerificationChallenges.expiresAt, now),
         ),
@@ -539,9 +588,20 @@ export async function verifyEmailSignUpOtp(
 
     if (!challenge) return { kind: "invalid" as const };
 
-    const expectedHash = hashEmailSignUpOtpCode(challenge.id, email, code);
+    const deliveryChannel: SignUpOtpDeliveryChannel = challenge.deliveryChannel === "whatsapp" ? "whatsapp" : "email";
+    const destination = deliveryChannel === "whatsapp" ? challenge.phoneE164 : challenge.email;
+    if (!destination || (deliveryChannel === "email" && !challenge.passwordHash)) {
+      return { kind: "invalid" as const };
+    }
 
-    if (!safelyMatchesHash(challenge.codeHash, expectedHash)) {
+    const expectedHash = hashSignUpOtpCode(challenge.id, deliveryChannel, destination, code);
+    const legacyEmailHash = deliveryChannel === "email"
+      ? hashEmailSignUpOtpCode(challenge.id, destination, code)
+      : null;
+    const codeMatches = safelyMatchesHash(challenge.codeHash, expectedHash)
+      || (legacyEmailHash !== null && safelyMatchesHash(challenge.codeHash, legacyEmailHash));
+
+    if (!codeMatches) {
       const nextAttemptCount = challenge.attemptCount + 1;
       await tx
         .update(emailSignupVerificationChallenges)
@@ -557,10 +617,11 @@ export async function verifyEmailSignUpOtp(
     const [user] = await tx
       .insert(users)
       .values({
-        email,
-        emailVerifiedAt: now,
+        email: deliveryChannel === "email" ? challenge.email : null,
+        ...(deliveryChannel === "email"
+          ? { emailVerifiedAt: now, passwordHash: challenge.passwordHash }
+          : { phoneVerifiedAt: now }),
         fullName: challenge.fullName,
-        passwordHash: challenge.passwordHash,
         phoneE164: challenge.phoneE164,
         status: "active",
       })
@@ -574,7 +635,7 @@ export async function verifyEmailSignUpOtp(
 
     if (!user) return { kind: "already_exists" as const };
 
-    return { kind: "verified" as const, userId: user.id };
+    return { kind: "verified" as const, deliveryChannel, userId: user.id };
   });
 
   if (result.kind === "invalid") throw new OtpVerificationError();
@@ -582,7 +643,12 @@ export async function verifyEmailSignUpOtp(
     throw new AccountAlreadyExistsError("An account with this email or mobile number already exists. Sign in instead.");
   }
 
-  return createAuthenticatedSession({ emailVerified: true, method: "email_password", userId: result.userId });
+  return createAuthenticatedSession({
+    emailVerified: result.deliveryChannel === "email",
+    method: result.deliveryChannel === "whatsapp" ? "phone_otp" : "email_password",
+    phoneVerified: result.deliveryChannel === "whatsapp",
+    userId: result.userId,
+  });
 }
 
 export async function signInWithEmailPassword(emailInput: string, password: string): Promise<VerifiedSignIn> {

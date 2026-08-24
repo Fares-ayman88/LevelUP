@@ -195,10 +195,11 @@ export const emailSignupVerificationChallenges = pgTable(
   "email_signup_verification_challenges",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    email: varchar("email", { length: 320 }).notNull(),
+    email: varchar("email", { length: 320 }),
     phoneE164: varchar("phone_e164", { length: 16 }).notNull(),
     fullName: varchar("full_name", { length: 160 }).notNull(),
-    passwordHash: varchar("password_hash", { length: 256 }).notNull(),
+    passwordHash: varchar("password_hash", { length: 256 }),
+    deliveryChannel: varchar("delivery_channel", { length: 16 }).notNull().default("email"),
     codeHash: varchar("code_hash", { length: 128 }).notNull(),
     attemptCount: smallint("attempt_count").notNull().default(0),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

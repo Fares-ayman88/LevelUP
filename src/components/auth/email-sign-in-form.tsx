@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, KeyRound, LoaderCircle, LockKeyhole, Mail } from "lucide-react";
+import { ArrowRight, KeyRound, LoaderCircle, LockKeyhole, Mail, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 
@@ -10,9 +10,10 @@ import { initialEmailSignInState } from "@/lib/auth/form-state";
 type EmailSignInFormProps = {
   googleEnabled: boolean;
   googleError?: string;
+  whatsAppEnabled: boolean;
 };
 
-export function EmailSignInForm({ googleEnabled, googleError }: EmailSignInFormProps) {
+export function EmailSignInForm({ googleEnabled, googleError, whatsAppEnabled }: EmailSignInFormProps) {
   const [state, action, pending] = useActionState(signInWithEmailAction, initialEmailSignInState);
 
   return (
@@ -129,6 +130,16 @@ export function EmailSignInForm({ googleEnabled, googleError }: EmailSignInFormP
           {!pending && <ArrowRight aria-hidden="true" size={17} />}
         </button>
       </form>
+
+      {whatsAppEnabled && (
+        <Link className="flex items-center justify-between gap-4 border border-white/10 bg-white/[0.025] px-4 py-3 text-sm transition hover:border-[#9db2ff]/45 hover:bg-white/[0.05]" href="/sign-in/whatsapp">
+          <span className="flex min-w-0 items-center gap-3 text-slate-300">
+            <MessageCircle aria-hidden="true" className="shrink-0 text-[#9db2ff]" size={17} />
+            <span className="min-w-0"><span className="block font-semibold text-white">Sign in with a WhatsApp code</span><span className="mt-0.5 block text-xs text-slate-500">Use the mobile number on your LevelUp account.</span></span>
+          </span>
+          <ArrowRight aria-hidden="true" className="shrink-0 text-[#9db2ff]" size={17} />
+        </Link>
+      )}
 
       <Link className="flex items-center justify-between gap-4 border border-white/10 bg-white/[0.025] px-4 py-3 text-sm transition hover:border-[#9db2ff]/45 hover:bg-white/[0.05]" href="/student-access">
         <span className="flex min-w-0 items-center gap-3 text-slate-300">

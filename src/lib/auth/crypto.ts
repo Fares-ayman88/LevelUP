@@ -4,6 +4,8 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 
 import { getServerEnvironment } from "@/lib/env/server";
 
+import type { SignUpOtpDeliveryChannel } from "./otp-delivery";
+
 function hash(value: string): string {
   return createHmac("sha256", getServerEnvironment().SESSION_SECRET).update(value).digest("hex");
 }
@@ -26,6 +28,15 @@ export function hashOtpCode(challengeId: string, phoneE164: string, code: string
 
 export function hashEmailSignUpOtpCode(challengeId: string, email: string, code: string): string {
   return hash(`email-sign-up-otp:${challengeId}:${email}:${code}`);
+}
+
+export function hashSignUpOtpCode(
+  challengeId: string,
+  deliveryChannel: SignUpOtpDeliveryChannel,
+  destination: string,
+  code: string,
+): string {
+  return hash(`sign-up-otp:${deliveryChannel}:${challengeId}:${destination}:${code}`);
 }
 
 export function normalizeRegistrationCode(code: string): string {

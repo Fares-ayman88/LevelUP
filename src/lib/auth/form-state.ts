@@ -1,3 +1,5 @@
+import type { SignUpOtpDeliveryChannel } from "./otp-delivery";
+
 export type EmailSignInState = {
   message?: string;
   status: "idle" | "error";
@@ -6,6 +8,8 @@ export type EmailSignInState = {
 export type EmailSignUpRequestState = {
   challengeId?: string;
   developmentCode?: string;
+  deliveryChannel?: SignUpOtpDeliveryChannel;
+  destination?: string;
   email?: string;
   expiresAt?: string;
   message?: string;

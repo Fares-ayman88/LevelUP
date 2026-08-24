@@ -4,6 +4,7 @@ import { GraduationCap, ShieldCheck } from "lucide-react";
 
 import { EmailSignUpForm } from "@/components/auth/email-sign-up-form";
 import { isGoogleSignInConfigured } from "@/lib/auth/google";
+import { isEmailOtpConfigured, isWhatsAppOtpConfigured } from "@/lib/auth/otp-availability";
 
 export const metadata = {
   title: "Create account | LevelUp",
@@ -30,7 +31,9 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
   } catch {
     error = undefined;
   }
+  const emailOtpEnabled = isEmailOtpConfigured();
   const googleEnabled = isGoogleSignInConfigured();
+  const whatsAppEnabled = isWhatsAppOtpConfigured();
 
   return (
     <main className="relative isolate min-h-screen overflow-hidden bg-[#07090d] px-5 py-5 text-white sm:px-8 sm:py-8">
@@ -63,7 +66,12 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
           </section>
 
           <section className="border border-white/10 bg-[#10131b]/75 p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8">
-            <EmailSignUpForm googleEnabled={googleEnabled} googleError={googleErrorMessage(error)} />
+            <EmailSignUpForm
+              emailOtpEnabled={emailOtpEnabled}
+              googleEnabled={googleEnabled}
+              googleError={googleErrorMessage(error)}
+              whatsAppEnabled={whatsAppEnabled}
+            />
           </section>
         </div>
       </div>

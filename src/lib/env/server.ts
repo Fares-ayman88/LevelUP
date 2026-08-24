@@ -22,10 +22,15 @@ const serverEnvironmentSchema = z
     CRON_SECRET: z.string().min(16).optional(),
     GOOGLE_CLIENT_ID: z.string().trim().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().trim().min(1).optional(),
-    OTP_PROVIDER: z.enum(["development", "infobip"]).default("development"),
+    OTP_PROVIDER: z.enum(["development", "infobip", "meta_whatsapp"]).default("development"),
     OTP_SENDER_ID: z.string().trim().min(1).max(32).optional(),
     INFOBIP_BASE_URL: z.string().url().optional(),
     INFOBIP_API_KEY: z.string().trim().min(1).optional(),
+    META_WHATSAPP_ACCESS_TOKEN: z.string().trim().min(1).optional(),
+    META_WHATSAPP_GRAPH_API_VERSION: z.string().trim().regex(/^v\d+\.\d+$/).optional(),
+    META_WHATSAPP_PHONE_NUMBER_ID: z.string().trim().regex(/^\d+$/).optional(),
+    META_WHATSAPP_TEMPLATE_LANGUAGE: z.string().trim().min(2).max(32).optional(),
+    META_WHATSAPP_TEMPLATE_NAME: z.string().trim().min(1).max(512).optional(),
     EMAIL_OTP_PROVIDER: z.enum(["development", "resend"]).default("development"),
     RESEND_API_KEY: z.string().trim().min(1).optional(),
     RESEND_FROM: z.string().trim().min(3).max(320).optional(),
@@ -44,11 +49,15 @@ const serverEnvironmentSchema = z
       });
     }
 
-    if (environment.NODE_ENV === "production" && environment.EMAIL_OTP_PROVIDER === "development") {
+    if (
+      environment.NODE_ENV === "production"
+      && environment.OTP_PROVIDER === "development"
+      && environment.EMAIL_OTP_PROVIDER === "development"
+    ) {
       context.addIssue({
         code: "custom",
-        message: "EMAIL_OTP_PROVIDER must use a production provider outside development.",
-        path: ["EMAIL_OTP_PROVIDER"],
+        message: "Configure either a production OTP provider or a production email OTP provider.",
+        path: ["OTP_PROVIDER"],
       });
     }
 
@@ -75,6 +84,26 @@ const serverEnvironmentSchema = z
           message: "OTP_SENDER_ID is required when OTP_PROVIDER=infobip.",
           path: ["OTP_SENDER_ID"],
         });
+      }
+    }
+
+    if (environment.OTP_PROVIDER === "meta_whatsapp") {
+      const requiredMetaConfiguration = [
+        ["META_WHATSAPP_ACCESS_TOKEN", environment.META_WHATSAPP_ACCESS_TOKEN],
+        ["META_WHATSAPP_GRAPH_API_VERSION", environment.META_WHATSAPP_GRAPH_API_VERSION],
+        ["META_WHATSAPP_PHONE_NUMBER_ID", environment.META_WHATSAPP_PHONE_NUMBER_ID],
+        ["META_WHATSAPP_TEMPLATE_LANGUAGE", environment.META_WHATSAPP_TEMPLATE_LANGUAGE],
+        ["META_WHATSAPP_TEMPLATE_NAME", environment.META_WHATSAPP_TEMPLATE_NAME],
+      ] as const;
+
+      for (const [field, value] of requiredMetaConfiguration) {
+        if (!value) {
+          context.addIssue({
+            code: "custom",
+            message: `${field} is required when OTP_PROVIDER=meta_whatsapp.`,
+            path: [field],
+          });
+        }
       }
     }
 

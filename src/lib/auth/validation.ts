@@ -1,20 +1,47 @@
 import { z } from "zod";
 
+import { signUpOtpDeliveryChannels } from "./otp-delivery";
+
+const signUpOtpDeliveryChannelSchema = z.preprocess(
+  (value) => value === null ? undefined : value,
+  z.enum(signUpOtpDeliveryChannels).default("email"),
+);
+
 export const emailPasswordSignInSchema = z.object({
   email: z.string().trim().email("Enter a valid email address.").max(320, "Keep the email under 320 characters."),
   password: z.string().min(8, "Use at least 8 characters for your password.").max(256, "Keep the password under 256 characters."),
 });
 
+const optionalSignUpText = (maxLength: number, message: string) => z.preprocess(
+  (value) => value == null ? "" : value,
+  z.string().trim().max(maxLength, message),
+);
+
 export const emailPasswordSignUpSchema = z
   .object({
-    confirmPassword: z.string().min(1, "Confirm your password.").max(256, "Keep the password under 256 characters."),
-    email: z.string().trim().email("Enter a valid email address.").max(320, "Keep the email under 320 characters."),
+    confirmPassword: optionalSignUpText(256, "Keep the password under 256 characters."),
+    email: optionalSignUpText(320, "Keep the email under 320 characters."),
     fullName: z.string().trim().min(2, "Enter your full name.").max(160, "Keep the name under 160 characters."),
-    password: z.string().min(8, "Use at least 8 characters for your password.").max(256, "Keep the password under 256 characters."),
+    password: optionalSignUpText(256, "Keep the password under 256 characters."),
     phone: z.string().trim().min(1, "Enter your mobile number.").max(32, "Keep the mobile number under 32 characters."),
+    deliveryChannel: signUpOtpDeliveryChannelSchema,
   })
   .superRefine((value, context) => {
-    if (value.password !== value.confirmPassword) {
+    if (value.deliveryChannel !== "email") return;
+
+    if (!value.email) {
+      context.addIssue({ code: "custom", message: "Enter a valid email address.", path: ["email"] });
+    } else if (!z.string().email().safeParse(value.email).success) {
+      context.addIssue({ code: "custom", message: "Enter a valid email address.", path: ["email"] });
+    }
+
+    if (value.password.length < 8) {
+      context.addIssue({ code: "custom", message: "Use at least 8 characters for your password.", path: ["password"] });
+    }
+
+    if (!value.confirmPassword) {
+      context.addIssue({ code: "custom", message: "Confirm your password.", path: ["confirmPassword"] });
+    } else if (value.password !== value.confirmPassword) {
       context.addIssue({ code: "custom", message: "Passwords do not match.", path: ["confirmPassword"] });
     }
   });
@@ -22,7 +49,6 @@ export const emailPasswordSignUpSchema = z
 export const emailSignUpVerificationSchema = z.object({
   challengeId: z.string().uuid(),
   code: z.string().trim().regex(/^\d{6}$/, "Enter the six-digit code."),
-  email: z.string().trim().email("Enter a valid email address.").max(320, "Keep the email under 320 characters."),
 });
 
 function optionalFormText(defaultValue: string, maxLength: number, message: string) {

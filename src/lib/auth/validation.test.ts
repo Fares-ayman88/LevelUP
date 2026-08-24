@@ -39,19 +39,27 @@ describe("authentication form validation", () => {
     ).toBe(false);
   });
 
-  it("requires an email-bound six-digit sign-up verification code", () => {
+  it("allows a phone-first WhatsApp sign-up without collecting an unverified email", () => {
+    expect(
+      emailPasswordSignUpSchema.safeParse({
+        deliveryChannel: "whatsapp",
+        fullName: "Student One",
+        phone: "010 1234 5678",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires a challenge-bound six-digit sign-up verification code", () => {
     expect(
       emailSignUpVerificationSchema.safeParse({
         challengeId: "c9b41138-8db5-4e37-b72a-65f3de912f3f",
         code: "123456",
-        email: "student@levelup.demo",
       }).success,
     ).toBe(true);
     expect(
       emailSignUpVerificationSchema.safeParse({
         challengeId: "not-a-uuid",
         code: "1234ab",
-        email: "not-an-email",
       }).success,
     ).toBe(false);
   });

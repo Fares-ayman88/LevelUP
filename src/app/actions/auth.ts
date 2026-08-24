@@ -123,6 +123,7 @@ export async function requestEmailSignUpOtpAction(
   const parsed = emailPasswordSignUpSchema.safeParse({
     confirmPassword: formData.get("confirmPassword"),
     email: formData.get("email"),
+    deliveryChannel: formData.get("deliveryChannel"),
     fullName: formData.get("fullName"),
     password: formData.get("password"),
     phone: formData.get("phone"),
@@ -142,6 +143,8 @@ export async function requestEmailSignUpOtpAction(
       status: "code_sent",
       challengeId: result.challengeId,
       developmentCode: result.developmentCode,
+      deliveryChannel: result.deliveryChannel,
+      destination: result.destination,
       email: result.email,
       expiresAt: result.expiresAt.toISOString(),
     };
@@ -161,7 +164,6 @@ export async function verifyEmailSignUpOtpAction(
   const parsed = emailSignUpVerificationSchema.safeParse({
     challengeId: formData.get("challengeId"),
     code: formData.get("code"),
-    email: formData.get("email"),
   });
 
   if (!parsed.success) {
@@ -174,12 +176,12 @@ export async function verifyEmailSignUpOtpAction(
 
   let result;
   try {
-    result = await verifyEmailSignUpOtp(parsed.data.email, parsed.data.challengeId, parsed.data.code);
+    result = await verifyEmailSignUpOtp(parsed.data.challengeId, parsed.data.code);
   } catch (error) {
     return {
       ...initialEmailSignUpVerificationState,
       status: "error",
-      message: getPublicAuthenticationMessage(error, "We could not verify your email. Please try again shortly."),
+      message: getPublicAuthenticationMessage(error, "We could not verify your account. Please try again shortly."),
     };
   }
 
