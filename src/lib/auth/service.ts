@@ -45,6 +45,7 @@ import {
   StudentAccessCodeError,
 } from "./errors";
 import { createMetaWhatsAppOtpSender } from "./meta-whatsapp";
+import { createWahaOtpSender } from "./waha-otp";
 import type { SignUpOtpDeliveryChannel } from "./otp-delivery";
 import { createInfobipOtpSender, developmentOtpSender, type OtpPurpose } from "./otp";
 import { hashPassword, verifyPassword } from "./password";
@@ -267,6 +268,14 @@ async function sendOtp(destination: string, code: string, purpose: OtpPurpose) {
       }).send({ destination, code, purpose });
     }
 
+    if (environment.OTP_PROVIDER === "waha") {
+      return await createWahaOtpSender({
+        apiKey: environment.WAHA_API_KEY,
+        apiUrl: environment.WAHA_API_URL!,
+        sessionName: environment.WAHA_SESSION_NAME,
+      }).send({ destination, code, purpose });
+    }
+
     return await createMetaWhatsAppOtpSender({
       accessToken: environment.META_WHATSAPP_ACCESS_TOKEN!,
       graphApiVersion: environment.META_WHATSAPP_GRAPH_API_VERSION!,
@@ -288,6 +297,7 @@ function canDeliverSignUpOtp(
   }
 
   return environment.OTP_PROVIDER === "meta_whatsapp"
+    || environment.OTP_PROVIDER === "waha"
     || (environment.NODE_ENV !== "production" && environment.OTP_PROVIDER === "development");
 }
 

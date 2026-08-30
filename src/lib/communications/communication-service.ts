@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { auditLogs, organizations } from "@/db/schema";
 import { getDatabase } from "@/db/client";
 import { requirePermission } from "@/lib/authorization/permissions";
+import { sendWhatsAppMessage, sendBulkWhatsAppMessages, type MessageDeliveryResult, type MessageRecipient } from "@/lib/waha/messaging-service";
 import type { CenterAdminWorkspaceContext } from "@/lib/workspace/payment-channels";
 
 export type CommunicationTemplate = {
@@ -87,3 +88,75 @@ export async function logCommunicationDispatch(
     organizationId: context.organization.id,
   });
 }
+
+/**
+ * Send a single message via WAHA and log the dispatch.
+ */
+export async function dispatchViaWaha(
+  context: CenterAdminWorkspaceContext,
+  recipientPhone: string,
+  messageText: string,
+): Promise<MessageDeliveryResult> {
+  requirePermission(
+    { organizationId: context.organization.id, roles: context.organization.roles, userId: context.userId },
+    "organization.manage_settings",
+  );
+
+  const result = await sendWhatsAppMessage(recipientPhone, messageText);
+
+  // Log the dispatch regardless of delivery status
+  const db = getDatabase();
+  await db.insert(auditLogs).values({
+    action: "communication.waha_dispatched",
+    actorMembershipId: context.actorMembershipId,
+    entityId: context.organization.id,
+    entityType: "organization",
+    metadata: {
+      deliveryStatus: result.status,
+      error: result.error,
+      recipientPhone,
+      textLength: messageText.length,
+    },
+    organizationId: context.organization.id,
+  });
+
+  return result;
+}
+
+/**
+ * Send messages to multiple recipients via WAHA with rate limiting.
+ * Each dispatch is individually logged.
+ */
+export async function dispatchBulkViaWaha(
+  context: CenterAdminWorkspaceContext,
+  recipients: MessageRecipient[],
+): Promise<MessageDeliveryResult[]> {
+  requirePermission(
+    { organizationId: context.organization.id, roles: context.organization.roles, userId: context.userId },
+    "organization.manage_settings",
+  );
+
+  const results = await sendBulkWhatsAppMessages(recipients);
+
+  // Log each individual dispatch
+  const db = getDatabase();
+  for (const result of results) {
+    const recipient = recipients.find((r) => r.phoneE164 === result.phoneE164);
+    await db.insert(auditLogs).values({
+      action: "communication.waha_dispatched",
+      actorMembershipId: context.actorMembershipId,
+      entityId: context.organization.id,
+      entityType: "organization",
+      metadata: {
+        deliveryStatus: result.status,
+        error: result.error,
+        recipientPhone: result.phoneE164,
+        textLength: recipient?.message.length ?? 0,
+      },
+      organizationId: context.organization.id,
+    });
+  }
+
+  return results;
+}
+

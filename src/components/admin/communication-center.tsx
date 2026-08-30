@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { MessageSquare, Send, Sparkles } from "lucide-react";
+import { useState, useActionState, useEffect } from "react";
+import { MessageSquare, Send, Sparkles, Wifi, WifiOff, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { defaultCommunicationTemplates, generateWhatsAppLink, interpolateTemplate } from "@/lib/communications/communication-utils";
+import { sendWahaMessageAction, type SendMessageActionState } from "@/app/actions/communications";
+
+const initialState: SendMessageActionState = { success: false };
 
 export function CommunicationCenter() {
   const [selectedTemplateId, setSelectedTemplateId] = useState(defaultCommunicationTemplates[0].id);
@@ -13,6 +16,28 @@ export function CommunicationCenter() {
   const [groupName, setGroupName] = useState("مجموعة أ");
   const [amount, setAmount] = useState("400 EGP");
   const [customMessage, setCustomMessage] = useState("");
+  const [wahaConnected, setWahaConnected] = useState<boolean | null>(null);
+
+  const [sendState, sendAction, isSending] = useActionState(sendWahaMessageAction, initialState);
+
+  // Check WAHA connection status on mount
+  useEffect(() => {
+    async function checkWahaStatus() {
+      try {
+        const response = await fetch("/api/waha/status");
+        if (response.ok) {
+          const data = await response.json();
+          setWahaConnected(data.connected === true);
+        } else {
+          setWahaConnected(false);
+        }
+      } catch {
+        setWahaConnected(false);
+      }
+    }
+
+    checkWahaStatus();
+  }, []);
 
   const currentTemplate = defaultCommunicationTemplates.find((t) => t.id === selectedTemplateId) ?? defaultCommunicationTemplates[0];
 
@@ -114,7 +139,24 @@ export function CommunicationCenter() {
               <Sparkles size={15} />
               معاينة الرسالة (Message Preview)
             </span>
-            <span className="text-xs text-slate-500">{previewMessage.length} characters</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500">{previewMessage.length} characters</span>
+              {/* WAHA Connection Status Indicator */}
+              {wahaConnected !== null && (
+                <span
+                  className={[
+                    "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 border",
+                    wahaConnected
+                      ? "border-emerald-500/30 bg-emerald-950/20 text-emerald-400"
+                      : "border-amber-500/30 bg-amber-950/20 text-amber-400",
+                  ].join(" ")}
+                  title={wahaConnected ? "WAHA connected — ready to send" : "WAHA disconnected — use WhatsApp Web link"}
+                >
+                  {wahaConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+                  {wahaConnected ? "WAHA" : "Offline"}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 font-arabic text-sm leading-7 text-emerald-100 dir-rtl">
@@ -122,17 +164,64 @@ export function CommunicationCenter() {
           </div>
         </div>
 
+        {/* Delivery Status Toast */}
+        {sendState.success && (
+          <div className="flex items-center gap-2 border border-emerald-500/30 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-400">
+            <CheckCircle2 size={14} />
+            تم إرسال الرسالة بنجاح (Message sent successfully)
+          </div>
+        )}
+        {sendState.error && !sendState.success && (
+          <div className="flex items-center gap-2 border border-red-500/30 bg-red-950/20 px-3 py-2 text-xs text-red-400">
+            <XCircle size={14} />
+            {sendState.error}
+          </div>
+        )}
+
         <div className="space-y-3 pt-4 border-t border-white/8">
+          {/* Direct Send via WAHA */}
+          {phone && wahaConnected && (
+            <form action={sendAction}>
+              <input name="phone" type="hidden" value={phone} />
+              <input name="message" type="hidden" value={previewMessage} />
+              <button
+                className="flex h-11 w-full items-center justify-center gap-2 bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSending}
+                type="submit"
+              >
+                {isSending ? (
+                  <>
+                    <Loader2 aria-hidden="true" className="animate-spin" size={16} />
+                    جاري الإرسال... (Sending...)
+                  </>
+                ) : (
+                  <>
+                    <Send aria-hidden="true" size={16} />
+                    إرسال مباشر عبر WAHA (Send directly via WAHA)
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* Fallback: WhatsApp Web Link */}
           {phone ? (
             <a
               aria-label="Send via WhatsApp Web"
-              className="flex h-11 w-full items-center justify-center gap-2 bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500"
+              className={[
+                "flex h-11 w-full items-center justify-center gap-2 px-4 text-sm font-semibold transition",
+                wahaConnected
+                  ? "border border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                  : "bg-emerald-600 text-white hover:bg-emerald-500",
+              ].join(" ")}
               href={waLink}
               rel="noopener noreferrer"
               target="_blank"
             >
-              <Send aria-hidden="true" size={16} />
-              إرسال عبر واتساب (Send via WhatsApp)
+              <MessageSquare aria-hidden="true" size={16} />
+              {wahaConnected
+                ? "إرسال عبر واتساب ويب (Send via WhatsApp Web)"
+                : "إرسال عبر واتساب (Send via WhatsApp)"}
             </a>
           ) : (
             <button

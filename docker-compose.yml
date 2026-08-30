@@ -17,5 +17,26 @@ services:
       timeout: 3s
       retries: 20
 
+  waha:
+    image: devlikeapro/waha
+    container_name: waha
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - WAHA_API_KEY=${WAHA_API_KEY:-levelup-dev-key}
+      - WAHA_DASHBOARD_USERNAME=admin
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD:-admin}
+      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+      - WAHA_LOG_LEVEL=info
+    volumes:
+      - waha-sessions:/app/.sessions
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
 volumes:
   levelup-postgres:
+  waha-sessions:

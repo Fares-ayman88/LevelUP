@@ -22,7 +22,7 @@ const serverEnvironmentSchema = z
     CRON_SECRET: z.string().min(16).optional(),
     GOOGLE_CLIENT_ID: z.string().trim().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().trim().min(1).optional(),
-    OTP_PROVIDER: z.enum(["development", "infobip", "meta_whatsapp"]).default("development"),
+    OTP_PROVIDER: z.enum(["development", "infobip", "meta_whatsapp", "waha"]).default("development"),
     OTP_SENDER_ID: z.string().trim().min(1).max(32).optional(),
     INFOBIP_BASE_URL: z.string().url().optional(),
     INFOBIP_API_KEY: z.string().trim().min(1).optional(),
@@ -39,6 +39,9 @@ const serverEnvironmentSchema = z
     OBJECT_STORAGE_REGION: z.string().trim().min(1).optional(),
     OBJECT_STORAGE_ACCESS_KEY_ID: z.string().trim().min(1).optional(),
     OBJECT_STORAGE_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
+    WAHA_API_URL: z.string().url().optional(),
+    WAHA_API_KEY: z.string().trim().min(1).optional(),
+    WAHA_SESSION_NAME: z.string().trim().min(1).max(64).default("default"),
   })
   .superRefine((environment, context) => {
     if (environment.NODE_ENV === "production" && !environment.CRON_SECRET) {
@@ -104,6 +107,16 @@ const serverEnvironmentSchema = z
             path: [field],
           });
         }
+      }
+    }
+
+    if (environment.OTP_PROVIDER === "waha") {
+      if (!environment.WAHA_API_URL) {
+        context.addIssue({
+          code: "custom",
+          message: "WAHA_API_URL is required when OTP_PROVIDER=waha.",
+          path: ["WAHA_API_URL"],
+        });
       }
     }
 

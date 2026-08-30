@@ -13,7 +13,8 @@ export function isEmailOtpConfigured(): boolean {
 
 export function isWhatsAppOtpConfigured(): boolean {
   try {
-    return getServerEnvironment().OTP_PROVIDER === "meta_whatsapp";
+    const provider = getServerEnvironment().OTP_PROVIDER;
+    return provider === "meta_whatsapp" || provider === "waha";
   } catch {
     return false;
   }
